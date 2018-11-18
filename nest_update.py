@@ -13,6 +13,34 @@ na = NestAuth()
 zc = ZipCode()
 ds = DarkSky()
 
+NIGHT_HOUR = {
+    0: 21,
+    1: 21,
+    2: 21,
+    3: 21,
+    4: 21,
+    5: 21,
+    6: 21,
+}
+MORNING_HOUR = {
+    0: 6,
+    1: 6,
+    2: 6,
+    3: 6,
+    4: 6,
+    5: 7,
+    6: 7,
+}
+
+HEAT_DAY = 65.0
+HEAT_NIGHT = 61.0
+COOL_DAY = 78.0
+COOL_NIGHT = 74.0
+
+CLOUD_SCALE = 1.0
+WIND_SCALE = (1.0/20.0)
+MAX_COOL_DIFF = 10.0
+
 BASE_URL = 'https://developer-api.nest.com/'
 
 headers = {
@@ -57,7 +85,7 @@ def invert_heat_index(heat_index, humidity):
     else:
         return None
 
-def get_desired_heat_index(zipcode, mode, tol=3.5):
+def get_desired_heat_index(zipcode, mode):
     print 'Calculate Target Heat Index'
     lat,lng = zc.get_lat_long(zipcode)
     weather = ds.get_weather(lat, lng, hours=2)
@@ -68,21 +96,21 @@ def get_desired_heat_index(zipcode, mode, tol=3.5):
     utcnow = datetime.utcnow()
     utcdate = utcnow.date()
     is_dark = utcnow >= datetime.combine(utcdate, weather['sunset'].time()) or utcnow <= datetime.combine(utcdate, weather['sunrise'].time())
+
     local_datetime = utcnow.replace(tzinfo=pytz.utc).astimezone(pytz.timezone(weather['timezone']))
-    night_hour = 21
-    morning_hour = 6 if local_datetime.weekday() < 5 else 7
-    is_night = (local_datetime.hour >= night_hour) or (local_datetime.hour <= morning_hour)
+    local_zero = local_datetime.replace(hour=0, minute=0, second=0, microsecond=0)
+    night_threshold = local_zero + timedelta(hours=NIGHT_HOUR[local_datetime.weekday()])
+    morning_threshold = local_zero + timedelta(hours=MORNING_HOUR[local_datetime.weekday()])
+    is_night = (local_datetime >= night_threshold) or (local_datetime <= morning_threshold)
     if mode == 'heat':
         sign = 1.0
-        baseline = 64.0 if is_night else 68.0
-        baseline = baseline - tol
+        baseline = HEAT_NIGHT if is_night else HEAT_DAY
     else:
         sign = -1.0
-        baseline = 72.0 if is_night else 76.0
-        baseline = baseline + tol
+        baseline = COOL_NIGHT if is_night else COOL_DAY
 
-    cloudy_offset = 0 if is_dark else 1*(np.mean(weather['cloudCover'])-0.5)/0.5
-    wind_offset = sign*np.mean(weather['windSpeed'])/20.0
+    cloudy_offset = 0 if is_dark else CLOUD_SCALE*(np.mean(weather['cloudCover'])-0.5)/0.5
+    wind_offset = WIND_SCALE*sign*np.mean(weather['windSpeed'])
     desired = baseline + cloudy_offset + wind_offset
     print ' baseline', baseline
     print ' clouds', cloudy_offset
@@ -90,7 +118,7 @@ def get_desired_heat_index(zipcode, mode, tol=3.5):
 
     if mode != 'heat':
         outdoor_heatindex = [get_heat_index(t,h) for t,h in zip(weather['temperature'], weather['humidity'])]
-        desired = max(desired, np.mean(outdoor_heatindex)-10.0)
+        desired = max(desired, np.mean(outdoor_heatindex)-MAX_COOL_DIFF)
 
     return desired
 

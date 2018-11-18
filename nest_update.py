@@ -61,6 +61,9 @@ def get_desired_heat_index(zipcode, mode, tol=3.0):
     print 'Calculate Target Heat Index'
     lat,lng = zc.get_lat_long(zipcode)
     weather = ds.get_weather(lat, lng, hours=2)
+    for k,v in weather.iteritems():
+        if type(v) == list:
+            print ' %s: %g'%(k, np.mean(v))
 
     utcnow = datetime.utcnow()
     utcdate = utcnow.date()

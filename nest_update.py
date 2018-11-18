@@ -85,13 +85,14 @@ def invert_heat_index(heat_index, humidity):
     else:
         return None
 
-def get_desired_heat_index(zipcode, mode):
+def get_desired_heat_index(zipcode, mode, indoor_temperature):
     print 'Calculate Target Heat Index'
     lat,lng = zc.get_lat_long(zipcode)
     weather = ds.get_weather(lat, lng, hours=2)
     for k,v in weather.iteritems():
         if type(v) == list:
             print ' %s: %g'%(k, np.mean(v))
+    print ' Theoretical indoor humidity:', get_humidity(indoor_temperature, np.mean(weather['dewPoint']))
 
     utcnow = datetime.utcnow()
     utcdate = utcnow.date()
@@ -112,6 +113,7 @@ def get_desired_heat_index(zipcode, mode):
     cloudy_offset = 0 if is_dark else CLOUD_SCALE*(np.mean(weather['cloudCover'])-0.5)/0.5
     wind_offset = WIND_SCALE*sign*np.mean(weather['windSpeed'])
     desired = baseline + cloudy_offset + wind_offset
+    print ' '
     print ' baseline', baseline
     print ' clouds', cloudy_offset
     print ' wind', wind_offset
@@ -145,7 +147,7 @@ thermostat_id = structure['thermostats'][0]
 zipcode = structure['postal_code']
 
 thermostat = get_thermostat_info(thermostat_id)
-target = get_desired_heat_index(zipcode, thermostat['hvac_mode'])
+target = get_desired_heat_index(zipcode, thermostat['hvac_mode'], thermostat['ambient_temperature_f'])
 required = invert_heat_index(target, thermostat['humidity'])
 required_int = int(round(required))
 print 'Datetime:', datetime.utcnow()

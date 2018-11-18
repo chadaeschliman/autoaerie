@@ -57,7 +57,7 @@ def invert_heat_index(heat_index, humidity):
     else:
         return None
 
-def get_desired_heat_index(zipcode, mode, tol=3.0):
+def get_desired_heat_index(zipcode, mode, tol=3.5):
     print 'Calculate Target Heat Index'
     lat,lng = zc.get_lat_long(zipcode)
     weather = ds.get_weather(lat, lng, hours=2)

@@ -152,13 +152,15 @@ required = invert_heat_index(target, thermostat['humidity'])
 required_int = int(round(required))
 print 'Datetime:', datetime.utcnow()
 print 'Mode:', thermostat['hvac_mode']
+print 'Away:', structure['away']
 print 'Target Temperature:', thermostat['target_temperature_f']
 print 'Actual Temperature:', thermostat['ambient_temperature_f']
 print 'Actual Humidity:', thermostat['humidity']
 print 'Actual Heat Index:', get_heat_index(thermostat['ambient_temperature_f'], thermostat['humidity'])
-print 'Target Heat Index:', target
-print 'Required Set:', required, required_int
-if required_int != thermostat['target_temperature_f']:
-    success = set_temperature(thermostat_id, required_int)
-    print 'Set temperature:', success
+if structure['away'] == 'home':
+    print 'Target Heat Index:', target
+    print 'Required Set:', required, required_int
+    if required_int != thermostat['target_temperature_f']:
+        success = set_temperature(thermostat_id, required_int)
+        print 'Set temperature:', success
 print ' '

@@ -1,6 +1,6 @@
 import requests
 from zipcode_lookup import ZipCode
-from datetime import datetime
+from datetime import datetime, timedelta
 
 DARK_SKY_KEY = 'ecec1d84f548d0fc058474873377a0db'
 
@@ -54,3 +54,39 @@ class DarkSky:
 
         res = r.json()
         return res
+
+    def get_historical(self, lat, lng, days=14):
+        today = datetime.utcnow().replace(hour=0,minute=0,second=0,microsecond=0)
+        params = {
+            'exclude': 'currently,minutely,hourly,alerts,flags',
+        }
+        result = {
+            'date': [],
+            'windSpeed': [],
+            'cloudCover': [],
+            'humidity': [],
+            'temperatureMin': [],
+            'temperatureMax': [],
+            'apparentTemperatureMin': [],
+            'apparentTemperatureMax': [],
+        }
+        for day in xrange(1,days+1):
+            target_date = today + timedelta(days=-day)
+            weather_url = 'https://api.darksky.net/forecast/%s/%f,%f,%s'%(DARK_SKY_KEY, lat, lng, target_date.strftime('%s'))
+            r = requests.get(weather_url)
+            if r.status_code != requests.codes.ok:
+                print 'Weather error:', r.status_code
+                print r.text
+                continue
+            res = r.json()
+            result['timezone'] = res['timezone']
+            sub_res = res['daily']['data'][0]
+            result['date'].append(target_date.strftime('%Y-%m-%d'))
+            result['windSpeed'].append(sub_res['windSpeed'])
+            result['cloudCover'].append(sub_res['cloudCover'])
+            result['humidity'].append(sub_res['humidity'])
+            result['temperatureMin'].append(sub_res['temperatureMin'])
+            result['temperatureMax'].append(sub_res['temperatureMax'])
+            result['apparentTemperatureMin'].append(sub_res['apparentTemperatureMin'])
+            result['apparentTemperatureMax'].append(sub_res['apparentTemperatureMax'])
+        return result

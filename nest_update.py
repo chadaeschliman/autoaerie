@@ -8,6 +8,8 @@ from zipcode_lookup import ZipCode
 from weather_api import DarkSky
 import pytz
 from datetime import datetime, timedelta
+import os
+import cPickle as pickle
 
 na = NestAuth()
 zc = ZipCode()
@@ -49,6 +51,8 @@ headers = {
     'Authorization': 'Bearer ' + na.get_token(),
 }
 
+weather_pickle = 'weather_data.pickle'
+
 def get_structure_info():
     # get thermostat id
     url = BASE_URL + 'structures/'
@@ -85,13 +89,40 @@ def invert_heat_index(heat_index, humidity):
     else:
         return None
 
+def get_average_high(zipcode):
+    today = datetime.utcnow().replace(hour=0,minute=0,second=0,microsecond=0)
+    if os.path.exists(weather_pickle):
+        with open(weather_pickle,'rb') as f:
+            weather_data = pickle.load(f)
+    else:
+        weather_data = {}
+    if zipcode in weather_data and datetime.strptime(weather_data[zipcode]['date'],'%Y-%m-%d') >= today:
+        result = weather_data[zipcode]
+    else:
+        print 'Pulling historical weather for', zipcode
+        lat,lng = zc.get_lat_long(zipcode)
+        weather = ds.get_historical(lat, lng, days=14)
+        result = {
+            'date': today.strftime('%Y-%m-%d')
+        }
+        for k,v in weather.iteritems():
+            if k=='date' or k=='timezone':
+                continue
+            result[k] = np.mean(v)
+        weather_data[zipcode] = result
+        with open(weather_pickle,'wb') as f:
+            pickle.dump(weather_data, f)
+    return result['temperatureMax']
+
 def get_desired_heat_index(zipcode, mode, indoor_temperature):
     print 'Calculate Target Heat Index'
     lat,lng = zc.get_lat_long(zipcode)
     weather = ds.get_weather(lat, lng, hours=2)
+    high_temp = get_average_high(zipcode)
     for k,v in weather.iteritems():
         if type(v) == list:
             print ' %s: %g'%(k, np.mean(v))
+    print ' Long term high:', high_temp
     print ' Theoretical indoor humidity:', get_humidity(indoor_temperature, np.mean(weather['dewPoint']))
 
     utcnow = datetime.utcnow()
@@ -106,17 +137,20 @@ def get_desired_heat_index(zipcode, mode, indoor_temperature):
     if mode == 'heat':
         sign = 1.0
         baseline = HEAT_NIGHT if is_night else HEAT_DAY
+        long_term_factor = max(-2.0,min(0, (high_temp-60.0)/30.0))
     else:
         sign = -1.0
         baseline = COOL_NIGHT if is_night else COOL_DAY
+        long_term_factor = max(0,min(2, (high_temp-70.0)/10.0))
 
     cloudy_offset = 0 if is_dark else CLOUD_SCALE*(np.mean(weather['cloudCover'])-0.5)/0.5
     wind_offset = WIND_SCALE*sign*np.mean(weather['windSpeed'])
-    desired = baseline + cloudy_offset + wind_offset
+    desired = baseline + cloudy_offset + wind_offset + long_term_factor
     print ' '
     print ' baseline', baseline
     print ' clouds', cloudy_offset
     print ' wind', wind_offset
+    print ' long_term', long_term_factor
 
     if mode != 'heat':
         outdoor_heatindex = [get_heat_index(t,h) for t,h in zip(weather['temperature'], weather['humidity'])]

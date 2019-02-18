@@ -12,13 +12,18 @@ import time
 import os
 import cPickle as pickle
 import pyrebase
+import os
+try:
+    ROOT = os.path.dirname(os.path.realpath(__file__))
+except:
+    ROOT = os.getcwd()
 
 config = {
   "apiKey": "apiKey",
   "authDomain": "autoaerie.firebaseapp.com",
   "databaseURL": "https://autoaerie.firebaseio.com",
   "storageBucket": "autoaerie.appspot.com",
-  "serviceAccount": "autoaerie-firebase-adminsdk-nw230-36d33619c0.json"
+  "serviceAccount": os.path.join(ROOT,"autoaerie-firebase-adminsdk-nw230-36d33619c0.json")
 }
 firebase = pyrebase.initialize_app(config)
 db = firebase.database()

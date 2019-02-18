@@ -8,8 +8,20 @@ from zipcode_lookup import ZipCode
 from weather_api import DarkSky
 import pytz
 from datetime import datetime, timedelta
+import time
 import os
 import cPickle as pickle
+import pyrebase
+
+config = {
+  "apiKey": "apiKey",
+  "authDomain": "autoaerie.firebaseapp.com",
+  "databaseURL": "https://autoaerie.firebaseio.com",
+  "storageBucket": "autoaerie.appspot.com",
+  "serviceAccount": "autoaerie-firebase-adminsdk-nw230-36d33619c0.json"
+}
+firebase = pyrebase.initialize_app(config)
+db = firebase.database()
 
 na = NestAuth()
 zc = ZipCode()
@@ -65,6 +77,7 @@ def get_thermostat_info(thermostat_id):
     thermo_url = BASE_URL + 'devices/thermostats/' + thermostat_id + '/'
     req = urllib2.Request(thermo_url, headers=headers)
     res = json.loads(urllib2.urlopen(req).read())
+    db.child('thermostats').child(thermostat_id).child('latest_info').update(res)
     return res
 
 def get_dewpoint(temperature, humidity):
@@ -114,7 +127,7 @@ def get_average_high(zipcode):
             pickle.dump(weather_data, f)
     return result['temperatureMax']
 
-def get_desired_heat_index(zipcode, mode, indoor_temperature):
+def get_desired_heat_index(zipcode, mode, indoor_temperature, actual_heat_index, thermostat_id):
     print 'Calculate Target Heat Index'
     lat,lng = zc.get_lat_long(zipcode)
     weather = ds.get_weather(lat, lng, hours=2)
@@ -124,6 +137,15 @@ def get_desired_heat_index(zipcode, mode, indoor_temperature):
             print ' %s: %g'%(k, np.mean(v))
     print ' Long term high:', high_temp
     print ' Theoretical indoor humidity:', get_humidity(indoor_temperature, np.mean(weather['dewPoint']))
+    db.child('thermostats').child(thermostat_id).child('latest_weather').update({
+        'timestamp': int(time.time()),
+        'temperature_f': weather['temperature'],
+        'dew_point_f': weather['dewPoint'],
+        'humidity_frac': weather['humidity'],
+        'cloud_cover_frac': weather['cloudCover'],
+        'wind_speed_mph': weather['windSpeed'],
+        'average_high_temperature_f': high_temp,
+    })
 
     utcnow = datetime.utcnow()
     utcdate = utcnow.date()
@@ -152,9 +174,20 @@ def get_desired_heat_index(zipcode, mode, indoor_temperature):
     print ' wind', wind_offset
     print ' long_term', long_term_factor
 
+    outdoor_heatindex = np.mean([get_heat_index(t,h) for t,h in zip(weather['temperature'], weather['humidity'])])
     if mode != 'heat':
-        outdoor_heatindex = [get_heat_index(t,h) for t,h in zip(weather['temperature'], weather['humidity'])]
-        desired = max(desired, np.mean(outdoor_heatindex)-MAX_COOL_DIFF)
+        desired = max(desired, outdoor_heatindex-MAX_COOL_DIFF)
+
+    db.child('thermostats').child(thermostat_id).child('control').update({
+        'timestamp': int(time.time()),
+        'baseline_f': baseline,
+        'cloudy_offset_f': cloudy_offset,
+        'wind_offset_f': wind_offset,
+        'long_term_offset_f': long_term_factor,
+        'outdoor_heat_index_f': outdoor_heatindex,
+        'actual_heat_index_f': actual_heat_index,
+        'target_heat_index_f': desired,
+    })
 
     return desired
 
@@ -181,7 +214,8 @@ thermostat_id = structure['thermostats'][0]
 zipcode = structure['postal_code']
 
 thermostat = get_thermostat_info(thermostat_id)
-target = get_desired_heat_index(zipcode, thermostat['hvac_mode'], thermostat['ambient_temperature_f'])
+actual_heat_index = get_heat_index(thermostat['ambient_temperature_f'], thermostat['humidity'])
+target = get_desired_heat_index(zipcode, thermostat['hvac_mode'], thermostat['ambient_temperature_f'], actual_heat_index, thermostat_id)
 required = invert_heat_index(target, thermostat['humidity'])
 required_int = int(round(required))
 print 'Datetime:', datetime.utcnow()
@@ -190,7 +224,7 @@ print 'Away:', structure['away']
 print 'Target Temperature:', thermostat['target_temperature_f']
 print 'Actual Temperature:', thermostat['ambient_temperature_f']
 print 'Actual Humidity:', thermostat['humidity']
-print 'Actual Heat Index:', get_heat_index(thermostat['ambient_temperature_f'], thermostat['humidity'])
+print 'Actual Heat Index:', actual_heat_index
 if structure['away'] == 'home':
     print 'Target Heat Index:', target
     print 'Required Set:', required, required_int

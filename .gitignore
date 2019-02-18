@@ -1,2 +1,5 @@
 *.pyc
 *.pickle
+*.json
+lextab.py
+yacctab.py

@@ -139,11 +139,11 @@ def get_desired_heat_index(zipcode, mode, indoor_temperature, actual_heat_index,
     print ' Theoretical indoor humidity:', get_humidity(indoor_temperature, np.mean(weather['dewPoint']))
     db.child('thermostats').child(thermostat_id).child('latest_weather').update({
         'timestamp': int(time.time()),
-        'temperature_f': weather['temperature'],
-        'dew_point_f': weather['dewPoint'],
-        'humidity_frac': weather['humidity'],
-        'cloud_cover_frac': weather['cloudCover'],
-        'wind_speed_mph': weather['windSpeed'],
+        'temperature_f': np.mean(weather['temperature']),
+        'dew_point_f': np.mean(weather['dewPoint']),
+        'humidity_frac': np.mean(weather['humidity']),
+        'cloud_cover_frac': np.mean(weather['cloudCover']),
+        'wind_speed_mph': np.mean(weather['windSpeed']),
         'average_high_temperature_f': high_temp,
     })
 

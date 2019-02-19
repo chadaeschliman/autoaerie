@@ -19,7 +19,7 @@ except:
     ROOT = os.getcwd()
 
 config = {
-  "apiKey": "apiKey",
+  "apiKey": "AIzaSyBuKcCqXqcDt4fbdO0xVT2mrHWWJIdUtQ8",
   "authDomain": "autoaerie.firebaseapp.com",
   "databaseURL": "https://autoaerie.firebaseio.com",
   "storageBucket": "autoaerie.appspot.com",

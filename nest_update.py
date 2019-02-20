@@ -141,6 +141,7 @@ def update_weather(zipcode):
     latest_weather = db.child('weather').child(key).child('latest').get().val()
     if latest_weather is None or datetime.utcfromtimestamp(latest_weather['timestamp'])+timedelta(minutes=59.5) < utcnow:
         weather = ds.get_weather(lat, lng, hours=1)
+        high_temp = get_average_high(zipcode)
         latest_weather = {
             'timestamp': int((utcnow - datetime.utcfromtimestamp(0)).total_seconds()),
             'timezone': weather['timezone'],
@@ -151,6 +152,7 @@ def update_weather(zipcode):
             'wind_speed_mph': np.mean(weather['windSpeed']),
             'sunrise': int((weather['sunrise'] - datetime.utcfromtimestamp(0)).total_seconds()),
             'sunset': int((weather['sunset'] - datetime.utcfromtimestamp(0)).total_seconds()),
+            'average_high_temperature_f': high_temp,
         }
         db.child('weather').child(key).child('latest').set(latest_weather)
         history = db.child('weather').child(key).child('history').get().val()

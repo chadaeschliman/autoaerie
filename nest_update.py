@@ -262,7 +262,7 @@ if structure['away'] == 'home':
 print ' '
 control['target_temperature_f'] = required
 control['actual_temperature_f'] = thermostat['ambient_temperature_f']
-control['state'] = structure['away']
+control['away'] = structure['away']
 control['set_temperature'] = success
 db.child('thermostats').child(thermostat_id).child('control').update(control)
 

@@ -18,13 +18,9 @@ try:
 except:
     ROOT = os.getcwd()
 
-config = {
-  "apiKey": "AIzaSyBuKcCqXqcDt4fbdO0xVT2mrHWWJIdUtQ8",
-  "authDomain": "autoaerie.firebaseapp.com",
-  "databaseURL": "https://autoaerie.firebaseio.com",
-  "storageBucket": "autoaerie.appspot.com",
-  "serviceAccount": os.path.join(ROOT,"autoaerie-firebase-adminsdk-nw230-36d33619c0.json")
-}
+with open(os.path.join(ROOT, 'firebase_config.json'),'rb') as f:
+    config = json.load(f)
+config["serviceAccount"] = os.path.join(ROOT,"autoaerie-firebase-adminsdk-nw230-36d33619c0.json")
 firebase = pyrebase.initialize_app(config)
 db = firebase.database()
 

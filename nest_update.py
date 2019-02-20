@@ -64,7 +64,7 @@ headers = {
     'Authorization': 'Bearer ' + na.get_token(),
 }
 
-weather_pickle = 'weather_data.pickle'
+weather_pickle = os.path.join(ROOT,'weather_data.pickle')
 
 def get_structure_info():
     # get thermostat id
@@ -78,7 +78,6 @@ def get_thermostat_info(thermostat_id):
     thermo_url = BASE_URL + 'devices/thermostats/' + thermostat_id + '/'
     req = urllib2.Request(thermo_url, headers=headers)
     res = json.loads(urllib2.urlopen(req).read())
-    db.child('thermostats').child(thermostat_id).child('latest_info').update(res)
     return res
 
 def get_dewpoint(temperature, humidity):
@@ -128,29 +127,50 @@ def get_average_high(zipcode):
             pickle.dump(weather_data, f)
     return result['temperatureMax']
 
+def get_weather_key(zipcode):
+    lat,lng = zc.get_lat_long(zipcode)
+    key = ('%+.2f_%+.2f'%(lat,lng)).replace('.',',')
+    return key
+
+def update_weather(zipcode):
+    utcnow = datetime.utcnow()
+    key = get_weather_key(zipcode)
+    lat,lng = zc.get_lat_long(zipcode)
+    latest_weather = db.child('weather').child(key).child('latest').get().val()
+    if latest_weather is None or datetime.utcfromtimestamp(latest_weather['timestamp'])+timedelta(minutes=59.5) < utcnow:
+        weather = ds.get_weather(lat, lng, hours=1)
+        latest_weather = {
+            'timestamp': int((utcnow - datetime.utcfromtimestamp(0)).total_seconds()),
+            'timezone': weather['timezone'],
+            'temperature_f': np.mean(weather['temperature']),
+            'dew_point_f': np.mean(weather['dewPoint']),
+            'humidity_frac': np.mean(weather['humidity']),
+            'cloud_cover_frac': np.mean(weather['cloudCover']),
+            'wind_speed_mph': np.mean(weather['windSpeed']),
+            'sunrise': int((weather['sunrise'] - datetime.utcfromtimestamp(0)).total_seconds()),
+            'sunset': int((weather['sunset'] - datetime.utcfromtimestamp(0)).total_seconds()),
+        }
+        db.child('weather').child(key).child('latest').set(latest_weather)
+        history = db.child('weather').child(key).child('history').get().val()
+        if history is None:
+            history = []
+        oldest = utcnow - timedelta(days=14)
+        history = [latest_weather] + [w for w in history if datetime.utcfromtimestamp(w['timestamp'])>=oldest]
+        db.child('weather').child(key).child('history').set(history)
+    return key, latest_weather
+
 def get_desired_heat_index(zipcode, mode, indoor_temperature, actual_heat_index, thermostat_id):
     print 'Calculate Target Heat Index'
-    lat,lng = zc.get_lat_long(zipcode)
-    weather = ds.get_weather(lat, lng, hours=2)
+    key, weather = update_weather(zipcode)
     high_temp = get_average_high(zipcode)
     for k,v in weather.iteritems():
-        if type(v) == list:
-            print ' %s: %g'%(k, np.mean(v))
-    print ' Long term high:', high_temp
-    print ' Theoretical indoor humidity:', get_humidity(indoor_temperature, np.mean(weather['dewPoint']))
-    db.child('thermostats').child(thermostat_id).child('latest_weather').update({
-        'timestamp': int(time.time()),
-        'temperature_f': np.mean(weather['temperature']),
-        'dew_point_f': np.mean(weather['dewPoint']),
-        'humidity_frac': np.mean(weather['humidity']),
-        'cloud_cover_frac': np.mean(weather['cloudCover']),
-        'wind_speed_mph': np.mean(weather['windSpeed']),
-        'average_high_temperature_f': high_temp,
-    })
+        print ' %s: %s'%(k, str(v))
 
     utcnow = datetime.utcnow()
     utcdate = utcnow.date()
-    is_dark = utcnow >= datetime.combine(utcdate, weather['sunset'].time()) or utcnow <= datetime.combine(utcdate, weather['sunrise'].time())
+    sunrise = datetime.utcfromtimestamp(weather['sunrise'])
+    sunset = datetime.utcfromtimestamp(weather['sunset'])
+    is_dark = utcnow >= datetime.combine(utcdate, sunset.time()) or utcnow <= datetime.combine(utcdate, sunrise.time())
 
     local_datetime = utcnow.replace(tzinfo=pytz.utc).astimezone(pytz.timezone(weather['timezone']))
     local_zero = local_datetime.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -166,8 +186,8 @@ def get_desired_heat_index(zipcode, mode, indoor_temperature, actual_heat_index,
         baseline = COOL_NIGHT if is_night else COOL_DAY
         long_term_factor = max(0,min(2, (high_temp-70.0)/10.0))
 
-    cloudy_offset = 0 if is_dark else CLOUD_SCALE*(np.mean(weather['cloudCover'])-0.5)/0.5
-    wind_offset = WIND_SCALE*sign*np.mean(weather['windSpeed'])
+    cloudy_offset = 0 if is_dark else CLOUD_SCALE*(weather['cloud_cover_frac']-0.5)/0.5
+    wind_offset = WIND_SCALE*sign*weather['wind_speed_mph']
     desired = baseline + cloudy_offset + wind_offset + long_term_factor
     print ' '
     print ' baseline', baseline
@@ -175,7 +195,7 @@ def get_desired_heat_index(zipcode, mode, indoor_temperature, actual_heat_index,
     print ' wind', wind_offset
     print ' long_term', long_term_factor
 
-    outdoor_heatindex = np.mean([get_heat_index(t,h) for t,h in zip(weather['temperature'], weather['humidity'])])
+    outdoor_heatindex = get_heat_index(weather['temperature_f'],weather['humidity_frac'])
     if mode != 'heat':
         desired = max(desired, outdoor_heatindex-MAX_COOL_DIFF)
 
@@ -215,6 +235,9 @@ thermostat_id = structure['thermostats'][0]
 zipcode = structure['postal_code']
 
 thermostat = get_thermostat_info(thermostat_id)
+thermostat['zipcode'] = zipcode
+thermostat['weather_key'] = get_weather_key(zipcode)
+db.child('thermostats').child(thermostat_id).child('latest_info').update(thermostat)
 actual_heat_index = get_heat_index(thermostat['ambient_temperature_f'], thermostat['humidity'])
 target, control = get_desired_heat_index(zipcode, thermostat['hvac_mode'], thermostat['ambient_temperature_f'], actual_heat_index, thermostat_id)
 required = invert_heat_index(target, thermostat['humidity'])

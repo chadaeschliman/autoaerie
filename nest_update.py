@@ -278,8 +278,19 @@ sub = {
     'actual_heat_index_f': control['actual_heat_index_f'],
 }
 history = db.child('thermostats').child(thermostat_id).child('history').get().val()
+match = False
 if history is None:
     history = []
-oldest = utcnow - timedelta(days=14)
-history = [sub] + [w for w in history if datetime.utcfromtimestamp(w['timestamp'])>=oldest]
-db.child('thermostats').child(thermostat_id).child('history').set(history)
+else:
+    history = sorted(history, key=lambda x: x['timestamp'])
+    match = True
+    for k,v in history[-1].iteritems():
+        if k=='timestamp':
+            continue
+        if v != sub[k]:
+            match = False
+            break
+if not match:
+    oldest = utcnow - timedelta(days=14)
+    history = [w for w in history if datetime.utcfromtimestamp(w['timestamp'])>=oldest] + [sub]
+    db.child('thermostats').child(thermostat_id).child('history').set(history)

@@ -74,10 +74,12 @@ def get_structure_info():
     res = res.itervalues().next()
     return res
 
-def get_thermostat_info(thermostat_id):
+def get_thermostat_info(thermostat_id, zipcode):
     thermo_url = BASE_URL + 'devices/thermostats/' + thermostat_id + '/'
     req = urllib2.Request(thermo_url, headers=headers)
     res = json.loads(urllib2.urlopen(req).read())
+    res['zipcode'] = zipcode
+    res['weather_key'] = get_weather_key(zipcode)
     return res
 
 def get_dewpoint(temperature, humidity):
@@ -234,9 +236,7 @@ structure = get_structure_info()
 thermostat_id = structure['thermostats'][0]
 zipcode = structure['postal_code']
 
-thermostat = get_thermostat_info(thermostat_id)
-thermostat['zipcode'] = zipcode
-thermostat['weather_key'] = get_weather_key(zipcode)
+thermostat = get_thermostat_info(thermostat_id, zipcode)
 db.child('thermostats').child(thermostat_id).child('latest_info').update(thermostat)
 actual_heat_index = get_heat_index(thermostat['ambient_temperature_f'], thermostat['humidity'])
 target, control = get_desired_heat_index(zipcode, thermostat['hvac_mode'], thermostat['ambient_temperature_f'], actual_heat_index, thermostat_id)
@@ -256,9 +256,30 @@ if structure['away'] == 'home':
     if required_int != thermostat['target_temperature_f']:
         success = set_temperature(thermostat_id, required_int)
         print 'Set temperature:', success
+        if success:
+            time.sleep(1)
+            thermostat = get_thermostat_info(thermostat_id, zipcode)
 print ' '
 control['target_temperature_f'] = required
 control['actual_temperature_f'] = thermostat['ambient_temperature_f']
 control['state'] = structure['away']
 control['set_temperature'] = success
 db.child('thermostats').child(thermostat_id).child('control').update(control)
+
+utcnow = datetime.utcnow()
+sub = {
+    'timestamp': int((utcnow - datetime.utcfromtimestamp(0)).total_seconds()),
+    'away': structure['away'],
+    'hvac_mode': thermostat['hvac_mode'],
+    'hvac_state': thermostat['hvac_state'],
+    'target_temperature_f': thermostat['target_temperature_f'],
+    'actual_temperature_f': thermostat['ambient_temperature_f'],
+    'target_heat_index_f': control['target_heat_index_f'],
+    'actual_heat_index_f': control['actual_heat_index_f'],
+}
+history = db.child('thermostats').child(thermostat_id).child('history').get().val()
+if history is None:
+    history = []
+oldest = utcnow - timedelta(days=14)
+history = [sub] + [w for w in history if datetime.utcfromtimestamp(w['timestamp'])>=oldest]
+db.child('thermostats').child(thermostat_id).child('history').set(history)

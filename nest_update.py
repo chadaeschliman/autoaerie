@@ -183,7 +183,7 @@ def get_desired_heat_index(zipcode, mode, indoor_temperature, actual_heat_index,
     if mode != 'heat':
         desired = max(desired, outdoor_heatindex-MAX_COOL_DIFF)
 
-    db.child('thermostats').child(thermostat_id).child('control').update({
+    control = {
         'timestamp': int(time.time()),
         'baseline_f': baseline,
         'cloudy_offset_f': cloudy_offset,
@@ -192,9 +192,9 @@ def get_desired_heat_index(zipcode, mode, indoor_temperature, actual_heat_index,
         'outdoor_heat_index_f': outdoor_heatindex,
         'actual_heat_index_f': actual_heat_index,
         'target_heat_index_f': desired,
-    })
+    }
 
-    return desired
+    return desired, control
 
 # set target temperature (F)
 def set_temperature(thermostat_id, target_temperature):
@@ -220,7 +220,7 @@ zipcode = structure['postal_code']
 
 thermostat = get_thermostat_info(thermostat_id)
 actual_heat_index = get_heat_index(thermostat['ambient_temperature_f'], thermostat['humidity'])
-target = get_desired_heat_index(zipcode, thermostat['hvac_mode'], thermostat['ambient_temperature_f'], actual_heat_index, thermostat_id)
+target, control = get_desired_heat_index(zipcode, thermostat['hvac_mode'], thermostat['ambient_temperature_f'], actual_heat_index, thermostat_id)
 required = invert_heat_index(target, thermostat['humidity'])
 required_int = int(round(required))
 print 'Datetime:', datetime.utcnow()
@@ -230,6 +230,7 @@ print 'Target Temperature:', thermostat['target_temperature_f']
 print 'Actual Temperature:', thermostat['ambient_temperature_f']
 print 'Actual Humidity:', thermostat['humidity']
 print 'Actual Heat Index:', actual_heat_index
+success = False
 if structure['away'] == 'home':
     print 'Target Heat Index:', target
     print 'Required Set:', required, required_int
@@ -237,3 +238,8 @@ if structure['away'] == 'home':
         success = set_temperature(thermostat_id, required_int)
         print 'Set temperature:', success
 print ' '
+control['target_temperature_f'] = required
+control['actual_temperature_f'] = thermostat['ambient_temperature_f']
+control['state'] = structure['away']
+control['set_temperature'] = success
+db.child('thermostats').child(thermostat_id).child('control').update(control)

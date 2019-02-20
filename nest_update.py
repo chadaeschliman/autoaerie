@@ -114,7 +114,7 @@ def get_average_high(zipcode):
     if zipcode in weather_data and datetime.strptime(weather_data[zipcode]['date'],'%Y-%m-%d') >= today:
         result = weather_data[zipcode]
     else:
-        print 'Pulling historical weather for', zipcode
+        # print 'Pulling historical weather for', zipcode
         lat,lng = zc.get_lat_long(zipcode)
         weather = ds.get_historical(lat, lng, days=14)
         result = {
@@ -162,11 +162,11 @@ def update_weather(zipcode):
     return key, latest_weather
 
 def get_desired_heat_index(zipcode, mode, indoor_temperature, actual_heat_index, thermostat_id):
-    print 'Calculate Target Heat Index'
+    # print 'Calculate Target Heat Index'
     key, weather = update_weather(zipcode)
     high_temp = get_average_high(zipcode)
-    for k,v in weather.iteritems():
-        print ' %s: %s'%(k, str(v))
+    # for k,v in weather.iteritems():
+    #     print ' %s: %s'%(k, str(v))
 
     utcnow = datetime.utcnow()
     utcdate = utcnow.date()
@@ -191,11 +191,11 @@ def get_desired_heat_index(zipcode, mode, indoor_temperature, actual_heat_index,
     cloudy_offset = 0 if is_dark else CLOUD_SCALE*(weather['cloud_cover_frac']-0.5)/0.5
     wind_offset = WIND_SCALE*sign*weather['wind_speed_mph']
     desired = baseline + cloudy_offset + wind_offset + long_term_factor
-    print ' '
-    print ' baseline', baseline
-    print ' clouds', cloudy_offset
-    print ' wind', wind_offset
-    print ' long_term', long_term_factor
+    # print ' '
+    # print ' baseline', baseline
+    # print ' clouds', cloudy_offset
+    # print ' wind', wind_offset
+    # print ' long_term', long_term_factor
 
     outdoor_heatindex = get_heat_index(weather['temperature_f'],weather['humidity_frac'])
     if mode != 'heat':
@@ -242,24 +242,24 @@ actual_heat_index = get_heat_index(thermostat['ambient_temperature_f'], thermost
 target, control = get_desired_heat_index(zipcode, thermostat['hvac_mode'], thermostat['ambient_temperature_f'], actual_heat_index, thermostat_id)
 required = invert_heat_index(target, thermostat['humidity'])
 required_int = int(round(required))
-print 'Datetime:', datetime.utcnow()
-print 'Mode:', thermostat['hvac_mode']
-print 'Away:', structure['away']
-print 'Target Temperature:', thermostat['target_temperature_f']
-print 'Actual Temperature:', thermostat['ambient_temperature_f']
-print 'Actual Humidity:', thermostat['humidity']
-print 'Actual Heat Index:', actual_heat_index
+# print 'Datetime:', datetime.utcnow()
+# print 'Mode:', thermostat['hvac_mode']
+# print 'Away:', structure['away']
+# print 'Target Temperature:', thermostat['target_temperature_f']
+# print 'Actual Temperature:', thermostat['ambient_temperature_f']
+# print 'Actual Humidity:', thermostat['humidity']
+# print 'Actual Heat Index:', actual_heat_index
 success = False
 if structure['away'] == 'home':
-    print 'Target Heat Index:', target
-    print 'Required Set:', required, required_int
+    # print 'Target Heat Index:', target
+    # print 'Required Set:', required, required_int
     if required_int != thermostat['target_temperature_f']:
         success = set_temperature(thermostat_id, required_int)
-        print 'Set temperature:', success
+        # print 'Set temperature:', success
         if success:
             time.sleep(10)
             thermostat = get_thermostat_info(thermostat_id, zipcode)
-print ' '
+# print ' '
 control['target_temperature_f'] = required
 control['actual_temperature_f'] = thermostat['ambient_temperature_f']
 control['away'] = structure['away']
@@ -274,6 +274,7 @@ sub = {
     'hvac_state': thermostat['hvac_state'],
     'target_temperature_f': thermostat['target_temperature_f'],
     'actual_temperature_f': thermostat['ambient_temperature_f'],
+    'humidity': thermostat['humidity'],
     'target_heat_index_f': control['target_heat_index_f'],
     'actual_heat_index_f': control['actual_heat_index_f'],
 }

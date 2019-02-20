@@ -257,7 +257,7 @@ if structure['away'] == 'home':
         success = set_temperature(thermostat_id, required_int)
         print 'Set temperature:', success
         if success:
-            time.sleep(1)
+            time.sleep(10)
             thermostat = get_thermostat_info(thermostat_id, zipcode)
 print ' '
 control['target_temperature_f'] = required

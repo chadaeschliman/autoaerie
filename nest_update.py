@@ -275,8 +275,8 @@ sub = {
     'target_temperature_f': thermostat['target_temperature_f'],
     'actual_temperature_f': thermostat['ambient_temperature_f'],
     'humidity': thermostat['humidity'],
-    'target_heat_index_f': control['target_heat_index_f'],
-    'actual_heat_index_f': control['actual_heat_index_f'],
+    'target_heat_index_f': round(control['target_heat_index_f'],1),
+    'actual_heat_index_f': round(control['actual_heat_index_f'],1),
 }
 history = db.child('thermostats').child(thermostat_id).child('history').get().val()
 match = False

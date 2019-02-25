@@ -80,6 +80,8 @@ def get_thermostat_info(thermostat_id, zipcode):
     res = json.loads(urllib2.urlopen(req).read())
     res['zipcode'] = zipcode
     res['weather_key'] = get_weather_key(zipcode)
+    if res['hvac_mode'] == 'eco':
+        res['hvac_mode'] = res['previous_hvac_mode']
     return res
 
 def get_dewpoint(temperature, humidity):

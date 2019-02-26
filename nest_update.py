@@ -270,7 +270,7 @@ def set_eta(structure_id, eta_timestamp, trip_id):
     success = False
     eta = datetime.utcfromtimestamp(eta_timestamp)
     eta_begin = (eta - timedelta(minutes=1))
-    eta_end = (eta + timedelta(minutes=1))
+    eta_end = (eta + timedelta(minutes=6))
     if datetime.utcnow() >= eta_begin:
         return True
     data = json.dumps({

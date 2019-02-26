@@ -5,7 +5,7 @@ TIME_BUFFER = 1*60*60
 
 class NestAuth:
     def __init__(self):
-        self.token = 'c.q6HVfSeRdQFKECbPPzgC0kXAcPHUkzUDStq84jLJb5nvlLZXo0DV7QJfhVluX9yuXnQAbD2IljlsI8SoGAGWcEISBjvSOaLqp6qqbv7nVolhJGnI8x2cd2piGiRLGk7y0GpfmcYxssrSZ46f'
+        self.token = 'c.jfspuYCTgHLjjbtvgXSo3EZZPGZU1wnvucfNfwnWSP0o0N03g0j3HkFNWLRZTtgsb4IG8E6KdCyL49zCtLKjLrhhX09OLl0EJ3wSLE1pWsVZWqGFOyzX9N8JJLL4tQ5D2cdu5pGRVKv6edpt'
         self.expires = datetime(2028, 11, 13, 18, 17, 11, 625661)
 
     def __call__(self, r):

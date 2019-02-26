@@ -310,6 +310,7 @@ actual_heat_index = get_heat_index(thermostat['ambient_temperature_f'], thermost
 target, control = get_desired_heat_index(zipcode, thermostat['hvac_mode'], thermostat['ambient_temperature_f'], actual_heat_index, thermostat_id, custom=custom)
 required = invert_heat_index(target, thermostat['humidity'])
 required_int = int(round(required))
+force_temp_away = False
 if 'desired_away' in custom:
     write_custom = False
     success = True
@@ -325,6 +326,8 @@ if 'desired_away' in custom:
             if 'desired_eta' in custom and custom['desired_eta'] is not None:
                 eta = datetime.utcfromtimestamp(custom['desired_eta'])
                 if eta > datetime.utcnow():
+                    if eta < datetime.utcnow() + timedelta(minutes=30):
+                        force_temp_away = True
                     if custom['trip_id'] is None:
                         custom['trip_id'] = 'trip_' + ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(16))
                         write_custom = True
@@ -346,7 +349,7 @@ if 'desired_away' in custom:
         db.child('thermostats').child(thermostat_id).child('custom').set(custom)
 
 success = False
-if structure['away'] == 'home':
+if structure['away'] == 'home' or force_temp_away:
     if required_int != thermostat['target_temperature_f']:
         success = set_temperature(thermostat_id, required_int)
         if success:

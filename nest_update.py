@@ -338,7 +338,7 @@ if 'desired_away' in custom:
         else:
             custom['desired_away'] = structure['away']
             write_custom = True
-    if success and custom['desired_away'] != 'away' and custom['trip_id'] is not None:
+    if success and custom['desired_away'] != 'away' and 'trip_id' in custom and custom['trip_id'] is not None:
         custom['trip_id'] = None
         custom['desired_eta'] = None
         write_custom = True

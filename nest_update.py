@@ -13,6 +13,8 @@ import os
 import cPickle as pickle
 import pyrebase
 import os
+import random
+import string
 try:
     ROOT = os.path.dirname(os.path.realpath(__file__))
 except:
@@ -72,6 +74,12 @@ def get_structure_info():
     req = urllib2.Request(url, headers=headers)
     res = json.loads(urllib2.urlopen(req).read())
     res = res.itervalues().next()
+    return res
+
+def get_eta_begin(structure_id):
+    url = BASE_URL + 'structures/' + structure_id + '/eta_begin'
+    req = urllib2.Request(url, headers=headers)
+    res = json.loads(urllib2.urlopen(req).read())
     return res
 
 def get_thermostat_info(thermostat_id, zipcode):
@@ -165,7 +173,7 @@ def update_weather(zipcode):
         db.child('weather').child(key).child('history').set(history)
     return key, latest_weather
 
-def get_desired_heat_index(zipcode, mode, indoor_temperature, actual_heat_index, thermostat_id):
+def get_desired_heat_index(zipcode, mode, indoor_temperature, actual_heat_index, thermostat_id, custom):
     # print 'Calculate Target Heat Index'
     key, weather = update_weather(zipcode)
     high_temp = get_average_high(zipcode)
@@ -236,34 +244,115 @@ def set_temperature(thermostat_id, target_temperature):
             success = res['target_temperature_f'] == target_temperature
     return success
 
+# set away state
+def set_away(structure_id, away):
+    # set thermostat (urllib2 throws an error for the redirect which needs to be followed)
+    url = BASE_URL + 'structures/' + structure_id
+    success = False
+    data = json.dumps({'away':away})
+    try:
+        req = urllib2.Request(url, headers=headers, data=data)
+        req.get_method = lambda: 'PUT'
+        res = json.loads(urllib2.urlopen(req).read())
+        success = res['away'] == away
+    except urllib2.HTTPError as e:
+        if e.code==307:
+            req = urllib2.Request(e.headers.dict['location'], headers=headers, data=data)
+            req.get_method = lambda: 'PUT'
+            res = json.loads(urllib2.urlopen(req).read())
+            success = res['away'] == away
+    return success
+
+# set eta
+def set_eta(structure_id, eta_timestamp, trip_id):
+    # set thermostat (urllib2 throws an error for the redirect which needs to be followed)
+    url = BASE_URL + 'structures/' + structure_id + '/eta'
+    success = False
+    eta = datetime.utcfromtimestamp(eta_timestamp)
+    eta_begin = (eta - timedelta(minutes=1))
+    eta_end = (eta + timedelta(minutes=1))
+    if datetime.utcnow() >= eta_begin:
+        return True
+    data = json.dumps({
+        'trip_id': trip_id,
+        'estimated_arrival_window_begin': eta_begin.isoformat() + 'Z',
+        'estimated_arrival_window_end': eta_end.isoformat() + 'Z',
+    })
+    print data
+    res = None
+    try:
+        req = urllib2.Request(url, headers=headers, data=data)
+        req.get_method = lambda: 'PUT'
+        res = json.loads(urllib2.urlopen(req).read())
+    except urllib2.HTTPError as e:
+        if e.code==307:
+            req = urllib2.Request(e.headers.dict['location'], headers=headers, data=data)
+            req.get_method = lambda: 'PUT'
+            res = json.loads(urllib2.urlopen(req).read())
+    success = False
+    try:
+        success = res['trip_id'] == trip_id
+    except:
+        pass
+    return success
+
+
 structure = get_structure_info()
 thermostat_id = structure['thermostats'][0]
 zipcode = structure['postal_code']
 
 thermostat = get_thermostat_info(thermostat_id, zipcode)
 db.child('thermostats').child(thermostat_id).child('latest_info').update(thermostat)
+custom = db.child('thermostats').child(thermostat_id).child('custom').get().val()
+if custom is None:
+    custom = {}
 actual_heat_index = get_heat_index(thermostat['ambient_temperature_f'], thermostat['humidity'])
-target, control = get_desired_heat_index(zipcode, thermostat['hvac_mode'], thermostat['ambient_temperature_f'], actual_heat_index, thermostat_id)
+target, control = get_desired_heat_index(zipcode, thermostat['hvac_mode'], thermostat['ambient_temperature_f'], actual_heat_index, thermostat_id, custom=custom)
 required = invert_heat_index(target, thermostat['humidity'])
 required_int = int(round(required))
-# print 'Datetime:', datetime.utcnow()
-# print 'Mode:', thermostat['hvac_mode']
-# print 'Away:', structure['away']
-# print 'Target Temperature:', thermostat['target_temperature_f']
-# print 'Actual Temperature:', thermostat['ambient_temperature_f']
-# print 'Actual Humidity:', thermostat['humidity']
-# print 'Actual Heat Index:', actual_heat_index
+if 'desired_away' in custom:
+    write_custom = False
+    success = True
+    if custom['desired_away'] != structure['away'] and not custom['set_away']:
+        success = False
+        success = set_away(structure['structure_id'], custom['desired_away'])
+        if success:
+            structure['away'] = custom['desired_away']
+            custom['set_away'] = True
+            write_custom = True
+    if success and custom['desired_away'] == 'away':
+        if structure['away'] == 'away':
+            if 'desired_eta' in custom and custom['desired_eta'] is not None:
+                eta = datetime.utcfromtimestamp(custom['desired_eta'])
+                if eta > datetime.utcnow():
+                    if custom['trip_id'] is None:
+                        custom['trip_id'] = 'trip_' + ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(16))
+                        write_custom = True
+                    success = set_eta(structure['structure_id'], custom['desired_eta'], custom['trip_id'])
+                else:
+                    custom['desired_away'] = 'home'
+                    write_custom = True
+                    success = set_away(structure['structure_id'], custom['desired_away'])
+                    if success:
+                        structure['away'] = custom['desired_away']
+        else:
+            custom['desired_away'] = structure['away']
+            write_custom = True
+    if success and custom['desired_away'] != 'away' and custom['trip_id'] is not None:
+        custom['trip_id'] = None
+        custom['desired_eta'] = None
+        write_custom = True
+    if write_custom:
+        db.child('thermostats').child(thermostat_id).child('custom').set(custom)
+
 success = False
 if structure['away'] == 'home':
-    # print 'Target Heat Index:', target
-    # print 'Required Set:', required, required_int
     if required_int != thermostat['target_temperature_f']:
         success = set_temperature(thermostat_id, required_int)
-        # print 'Set temperature:', success
         if success:
             time.sleep(10)
             thermostat = get_thermostat_info(thermostat_id, zipcode)
-# print ' '
+
 control['target_temperature_f'] = required
 control['actual_temperature_f'] = thermostat['ambient_temperature_f']
 control['away'] = structure['away']

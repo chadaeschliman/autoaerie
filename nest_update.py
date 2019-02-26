@@ -328,7 +328,7 @@ if 'desired_away' in custom:
                 if eta > datetime.utcnow():
                     if eta < datetime.utcnow() + timedelta(minutes=30):
                         force_temp_away = True
-                    if custom['trip_id'] is None:
+                    if 'trip_id' not in custom or custom['trip_id'] is None:
                         custom['trip_id'] = 'trip_' + ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(16))
                         write_custom = True
                     success = set_eta(structure['structure_id'], custom['desired_eta'], custom['trip_id'])

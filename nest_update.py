@@ -55,6 +55,9 @@ HEAT_NIGHT = 62.0
 COOL_DAY = 78.0
 COOL_NIGHT = 74.0
 
+HEAT_AWAY = 55.0
+COOL_AWAY = 85.0
+
 CLOUD_SCALE = 1.0
 WIND_SCALE = (1.0/20.0)
 MAX_COOL_DIFF = 10.0
@@ -309,55 +312,34 @@ if custom is None:
 actual_heat_index = get_heat_index(thermostat['ambient_temperature_f'], thermostat['humidity'])
 target, control = get_desired_heat_index(weather, thermostat['hvac_mode'], thermostat['ambient_temperature_f'], actual_heat_index, thermostat_id, custom=custom)
 required = invert_heat_index(target, thermostat['humidity'])
-required_int = int(round(required))
 force_temp_away = False
-if 'desired_away' in custom:
-    write_custom = False
-    success = True
-    if not custom['set_away']:
-        if custom['desired_away'] != structure['away']:
-            success = False
-            success = set_away(structure['structure_id'], custom['desired_away'])
-            if success:
-                structure['away'] = custom['desired_away']
-                custom['set_away'] = True
-                write_custom = True
+if 'desired_away' in custom and custom['desired_away']=='away':
+    force_temp_away = True
+    control['control_target_temperature_f'] = required
+    if 'desired_eta' in custom and custom['desired_eta'] is not None:
+        eta = datetime.utcfromtimestamp(custom['desired_eta'])
+        if eta > datetime.utcnow():
+            model = get_model(db, thermostat_id, weather_key, thermostat['hvac_mode'])
+            minutes = min(12*60,(eta - datetime.utcnow()).total_seconds()/60.0)
+            final_temp = eval_model_temperature_after_time(model, thermostat['ambient_temperature_f'], True, weather['temperature_f'], weather['wind_speed_mph'], minutes)
+            control['away_minutes'] = minutes
+            control['away_final_temperature_f'] = final_temp
+            print "Predict %.1f degrees in %.1f minutes"%(final_temp, minutes)
+            if final_temp < required:
+                force_temp_away = False
         else:
-            custom['set_away'] = True
-            write_custom = True
-    if success and custom['desired_away'] == 'away':
-        if structure['away'] == 'away':
-            if 'desired_eta' in custom and custom['desired_eta'] is not None:
-                eta = datetime.utcfromtimestamp(custom['desired_eta'])
-                if eta > datetime.utcnow():
-                    model = get_model(db, thermostat_id, weather_key, thermostat['hvac_mode'])
-                    minutes = min(12*60,(eta - datetime.utcnow()).total_seconds()/60.0)
-                    final_temp = eval_model_temperature_after_time(model, thermostat['ambient_temperature_f'], True, weather['temperature_f'], weather['wind_speed_mph'], minutes)
-                    print "Predict %.1f degrees in %.1f minutes"%(final_temp, minutes)
-                    if final_temp < required:
-                        force_temp_away = True
-                    if 'trip_id' not in custom or custom['trip_id'] is None:
-                        custom['trip_id'] = 'trip_' + ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(16))
-                        write_custom = True
-                    success = set_eta(structure['structure_id'], custom['desired_eta'], custom['trip_id'])
-                else:
-                    custom['desired_away'] = 'home'
-                    write_custom = True
-                    success = set_away(structure['structure_id'], custom['desired_away'])
-                    if success:
-                        structure['away'] = custom['desired_away']
-        else:
-            custom['desired_away'] = structure['away']
-            write_custom = True
-    if success and custom['desired_away'] != 'away' and 'trip_id' in custom and custom['trip_id'] is not None:
-        custom['trip_id'] = None
-        custom['desired_eta'] = None
-        write_custom = True
-    if write_custom:
-        db.child('thermostats').child(thermostat_id).child('custom').set(custom)
+            custom['desired_away'] = 'home'
+            force_temp_away = False
+            db.child('thermostats').child(thermostat_id).child('custom').set(custom)
 
+if force_temp_away:
+    if thermostat['hvac_mode'] == 'heating':
+        required = HEAT_AWAY
+    elif thermostat['hvac_mode'] == 'cooling':
+        required = COOL_AWAY
+required_int = int(round(required))
 success = False
-if structure['away'] == 'home' or force_temp_away:
+if structure['away'] == 'home':
     if required_int != thermostat['target_temperature_f'] or force_temp_away:
         success = set_temperature(thermostat_id, required_int)
         if success:

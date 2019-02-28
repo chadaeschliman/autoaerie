@@ -15,6 +15,7 @@ import pyrebase
 import os
 import random
 import string
+from system_model import get_model, eval_model_temperature_after_time
 try:
     ROOT = os.path.dirname(os.path.realpath(__file__))
 except:
@@ -329,7 +330,10 @@ if 'desired_away' in custom:
             if 'desired_eta' in custom and custom['desired_eta'] is not None:
                 eta = datetime.utcfromtimestamp(custom['desired_eta'])
                 if eta > datetime.utcnow():
-                    if eta < datetime.utcnow() + timedelta(minutes=30):
+                    model = get_model(db, thermostat_id, weather_key, thermostat['hvac_mode'])
+                    minutes = min(12*60,(eta - datetime.utcnow()).total_seconds()/60.0)
+                    final_temp = eval_model_temperature_after_time(model, thermostat['actual_temperature_f'], True, weather['temperature_f'], weather['wind_mph'], minutes)
+                    if final_temp < required-0.5:
                         force_temp_away = True
                     if 'trip_id' not in custom or custom['trip_id'] is None:
                         custom['trip_id'] = 'trip_' + ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(16))
@@ -353,7 +357,7 @@ if 'desired_away' in custom:
 
 success = False
 if structure['away'] == 'home' or force_temp_away:
-    if required_int != thermostat['target_temperature_f']:
+    if required_int != thermostat['target_temperature_f'] or force_temp_away:
         success = set_temperature(thermostat_id, required_int)
         if success:
             time.sleep(10)

@@ -314,11 +314,15 @@ force_temp_away = False
 if 'desired_away' in custom:
     write_custom = False
     success = True
-    if custom['desired_away'] != structure['away'] and not custom['set_away']:
-        success = False
-        success = set_away(structure['structure_id'], custom['desired_away'])
-        if success:
-            structure['away'] = custom['desired_away']
+    if not custom['set_away']:
+        if custom['desired_away'] != structure['away']:
+            success = False
+            success = set_away(structure['structure_id'], custom['desired_away'])
+            if success:
+                structure['away'] = custom['desired_away']
+                custom['set_away'] = True
+                write_custom = True
+        else:
             custom['set_away'] = True
             write_custom = True
     if success and custom['desired_away'] == 'away':

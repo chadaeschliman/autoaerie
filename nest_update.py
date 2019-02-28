@@ -332,7 +332,8 @@ if 'desired_away' in custom:
                 if eta > datetime.utcnow():
                     model = get_model(db, thermostat_id, weather_key, thermostat['hvac_mode'])
                     minutes = min(12*60,(eta - datetime.utcnow()).total_seconds()/60.0)
-                    final_temp = eval_model_temperature_after_time(model, thermostat['ambient_temperature_f'], True, weather['temperature_f'], weather['wind_mph'], minutes)
+                    final_temp = eval_model_temperature_after_time(model, thermostat['ambient_temperature_f'], True, weather['temperature_f'], weather['wind_speed_mph'], minutes)
+                    print "Predict %.1f degrees in %.1f minutes"%(final_temp, minutes)
                     if final_temp < required-0.5:
                         force_temp_away = True
                     if 'trip_id' not in custom or custom['trip_id'] is None:

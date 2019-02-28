@@ -333,14 +333,14 @@ if 'desired_away' in custom and custom['desired_away']=='away':
             db.child('thermostats').child(thermostat_id).child('custom').set(custom)
 
 if force_temp_away:
-    if thermostat['hvac_mode'] == 'heating':
+    if thermostat['hvac_mode'] == 'heat':
         required = HEAT_AWAY
-    elif thermostat['hvac_mode'] == 'cooling':
+    elif thermostat['hvac_mode'] == 'cool':
         required = COOL_AWAY
 required_int = int(round(required))
 success = False
 if structure['away'] == 'home':
-    if required_int != thermostat['target_temperature_f'] or force_temp_away:
+    if required_int != thermostat['target_temperature_f']:
         success = set_temperature(thermostat_id, required_int)
         if success:
             time.sleep(10)

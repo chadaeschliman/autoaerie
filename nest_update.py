@@ -55,9 +55,6 @@ HEAT_NIGHT = 62.0
 COOL_DAY = 78.0
 COOL_NIGHT = 74.0
 
-HEAT_AWAY = 55.0
-COOL_AWAY = 85.0
-
 CLOUD_SCALE = 1.0
 WIND_SCALE = (1.0/20.0)
 MAX_COOL_DIFF = 10.0
@@ -334,9 +331,9 @@ if 'desired_away' in custom and custom['desired_away']=='away':
 
 if force_temp_away:
     if thermostat['hvac_mode'] == 'heat':
-        required = HEAT_AWAY
+        required = thermostat['away_temperature_low_f']
     elif thermostat['hvac_mode'] == 'cool':
-        required = COOL_AWAY
+        required = thermostat['away_temperature_high_f']
 required_int = int(round(required))
 success = False
 if structure['away'] == 'home':

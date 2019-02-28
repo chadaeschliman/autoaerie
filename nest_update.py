@@ -277,7 +277,7 @@ def set_eta(structure_id, eta_timestamp, trip_id):
         'estimated_arrival_window_begin': eta_begin.isoformat() + 'Z',
         'estimated_arrival_window_end': eta_end.isoformat() + 'Z',
     })
-    print data
+    # print data
     res = None
     try:
         req = urllib2.Request(url, headers=headers, data=data)
@@ -334,7 +334,7 @@ if 'desired_away' in custom:
                     minutes = min(12*60,(eta - datetime.utcnow()).total_seconds()/60.0)
                     final_temp = eval_model_temperature_after_time(model, thermostat['ambient_temperature_f'], True, weather['temperature_f'], weather['wind_speed_mph'], minutes)
                     print "Predict %.1f degrees in %.1f minutes"%(final_temp, minutes)
-                    if final_temp < required-0.5:
+                    if final_temp < required:
                         force_temp_away = True
                     if 'trip_id' not in custom or custom['trip_id'] is None:
                         custom['trip_id'] = 'trip_' + ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(16))

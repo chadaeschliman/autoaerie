@@ -82,12 +82,11 @@ def get_eta_begin(structure_id):
     res = json.loads(urllib2.urlopen(req).read())
     return res
 
-def get_thermostat_info(thermostat_id, zipcode):
+def get_thermostat_info(thermostat_id, weather_key):
     thermo_url = BASE_URL + 'devices/thermostats/' + thermostat_id + '/'
     req = urllib2.Request(thermo_url, headers=headers)
     res = json.loads(urllib2.urlopen(req).read())
-    res['zipcode'] = zipcode
-    res['weather_key'] = get_weather_key(zipcode)
+    res['weather_key'] = weather_key
     if res['hvac_mode'] == 'eco':
         res['hvac_mode'] = res['previous_hvac_mode']
     return res
@@ -173,9 +172,8 @@ def update_weather(zipcode):
         db.child('weather').child(key).child('history').set(history)
     return key, latest_weather
 
-def get_desired_heat_index(zipcode, mode, indoor_temperature, actual_heat_index, thermostat_id, custom):
+def get_desired_heat_index(weather, mode, indoor_temperature, actual_heat_index, thermostat_id, custom):
     # print 'Calculate Target Heat Index'
-    key, weather = update_weather(zipcode)
     high_temp = get_average_high(zipcode)
     # for k,v in weather.iteritems():
     #     print ' %s: %s'%(k, str(v))
@@ -300,14 +298,15 @@ def set_eta(structure_id, eta_timestamp, trip_id):
 structure = get_structure_info()
 thermostat_id = structure['thermostats'][0]
 zipcode = structure['postal_code']
+weather_key, weather = update_weather(zipcode)
 
-thermostat = get_thermostat_info(thermostat_id, zipcode)
+thermostat = get_thermostat_info(thermostat_id, weather_key)
 db.child('thermostats').child(thermostat_id).child('latest_info').update(thermostat)
 custom = db.child('thermostats').child(thermostat_id).child('custom').get().val()
 if custom is None:
     custom = {}
 actual_heat_index = get_heat_index(thermostat['ambient_temperature_f'], thermostat['humidity'])
-target, control = get_desired_heat_index(zipcode, thermostat['hvac_mode'], thermostat['ambient_temperature_f'], actual_heat_index, thermostat_id, custom=custom)
+target, control = get_desired_heat_index(weather, thermostat['hvac_mode'], thermostat['ambient_temperature_f'], actual_heat_index, thermostat_id, custom=custom)
 required = invert_heat_index(target, thermostat['humidity'])
 required_int = int(round(required))
 force_temp_away = False
@@ -358,7 +357,7 @@ if structure['away'] == 'home' or force_temp_away:
         success = set_temperature(thermostat_id, required_int)
         if success:
             time.sleep(10)
-            thermostat = get_thermostat_info(thermostat_id, zipcode)
+            thermostat = get_thermostat_info(thermostat_id, weather_key)
 
 control['target_temperature_f'] = required
 control['actual_temperature_f'] = thermostat['ambient_temperature_f']

@@ -22,6 +22,7 @@ thermostat_history = db.child('thermostats').child(thermostat_id).child('history
 tdf = pd.DataFrame(thermostat_history)
 tdf['datetime'] = [datetime.utcfromtimestamp(x)-timedelta(hours=5) for x in tdf.timestamp]
 tdf['input_on'] = tdf['hvac_state']!='off'
+tdf['is_home'] = tdf['away']=='home'
 tdf = tdf.set_index('datetime')
 tdf_minute = tdf.resample('T').mean().interpolate('zero')
 
@@ -52,7 +53,7 @@ df_hour['actual_temperature_f_lag^2'] = np.power(df_hour['actual_temperature_f_l
 # df_minute = df_minute.dropna()
 # df_minute['diff_temperature_f'] = df_minute['actual_temperature_f'] - df_minute['actual_temperature_f_lag_10']
 
-df_hour[['actual_temperature_f','target_temperature_f', 'temperature_f', 'input_on']].plot()
+df_hour[['actual_temperature_f','target_temperature_f', 'temperature_f', 'input_on', 'is_home']].plot()
 # (55+5*df_hour.input_on).rolling(2,center=True).mean().plot(color='g',label='input_on (1hr MA)')
 plt.grid(True)
 plt.legend()

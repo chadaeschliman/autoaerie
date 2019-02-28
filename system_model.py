@@ -150,9 +150,13 @@ def eval_model_time_to_temperature(model, target_temp, current_temp, input, outd
     else:
         sign = -1.0 if input else 1.0
     latest_temp = current_temp
+    cnt = 0
     while sign*latest_temp < sign*target_temp:
+        cnt += 1
         temp = advance_model([latest_temp], None, [input]*steps, [outdoor_temp]*steps, [wind_mph]*steps, model['coef'])
         T.extend(temp[1:])
         latest_temp = T[-1]
+        if cnt >= 4:
+            break
     T = [t for t in T if sign*t < sign*target_temp]
     return len(T)*model['freq']

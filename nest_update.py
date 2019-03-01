@@ -316,17 +316,24 @@ if 'desired_away' in custom and custom['desired_away']=='away':
     if 'desired_eta' in custom and custom['desired_eta'] is not None:
         eta = datetime.utcfromtimestamp(custom['desired_eta'])
         if eta > datetime.utcnow():
-            model = get_model(db, thermostat_id, weather_key, thermostat['hvac_mode'])
-            minutes = min(12*60,(eta - datetime.utcnow()).total_seconds()/60.0)
-            final_temp = eval_model_temperature_after_time(model, thermostat['ambient_temperature_f'], True, weather['temperature_f'], weather['wind_speed_mph'], minutes)
-            control['away_minutes'] = minutes
-            control['away_final_temperature_f'] = final_temp
-            print "Predict %.1f degrees in %.1f minutes"%(final_temp, minutes)
-            if final_temp < required:
+            if 'preheating' in custom and custom['preheating']:
                 force_temp_away = False
+            else:
+                model = get_model(db, thermostat_id, weather_key, thermostat['hvac_mode'])
+                minutes = min(12*60,(eta - datetime.utcnow()).total_seconds()/60.0)
+                final_temp = eval_model_temperature_after_time(model, thermostat['ambient_temperature_f'], True, weather['temperature_f'], weather['wind_speed_mph'], minutes)
+                control['away_minutes'] = minutes
+                control['away_final_temperature_f'] = final_temp
+                print "Predict %.1f degrees in %.1f minutes"%(final_temp, minutes)
+                if final_temp < required:
+                    force_temp_away = False
+                    custom['preheating'] = True
+                    db.child('thermostats').child(thermostat_id).child('custom').set(custom)
         else:
-            custom['desired_away'] = 'home'
             force_temp_away = False
+            custom['desired_away'] = 'home'
+            custom['preheating'] = False
+            custom['desired_eta'] = None
             db.child('thermostats').child(thermostat_id).child('custom').set(custom)
 
 if force_temp_away:

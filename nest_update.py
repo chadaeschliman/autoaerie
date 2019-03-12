@@ -16,6 +16,7 @@ import os
 import random
 import string
 from system_model import get_model, eval_model_temperature_after_time
+from ASHRAE_55_2017 import calculate_set, reverse_set, est_clo
 try:
     ROOT = os.path.dirname(os.path.realpath(__file__))
 except:
@@ -58,6 +59,9 @@ COOL_NIGHT = 74.0
 CLOUD_SCALE = 1.0
 WIND_SCALE = (1.0/20.0)
 MAX_COOL_DIFF = 10.0
+
+SOLAR_SCALE = 12.5
+WIND_ALPHA_SCALE = 0.05/20.0
 
 BASE_URL = 'https://developer-api.nest.com/'
 
@@ -152,6 +156,71 @@ def update_weather(zipcode):
         history = [latest_weather] + [w for w in history if datetime.utcfromtimestamp(w['timestamp'])>=oldest]
         db.child('weather').child(key).child('history').set(history)
     return key, latest_weather
+
+def calc_neutral_temp_f(outdoor_temp_f):
+    # source: Outdoor temperatures and comfort indoors, Michael Humphreys, 1978, https://doi.org/10.1080/09613217808550656
+    t0 = 22.0
+    tm = 24.0
+    a0 = 23.9
+    a1 = 0.295
+    to = max(0,(outdoor_temp_f-32)/1.8)
+    to_shift = to - t0
+    res = 1.8*(a0 + a1*(to_shift)*np.exp(-0.5*np.square(to_shift/tm)))+32
+    return res
+
+def get_desired_set(weather, mode, custom={}):
+    average_outdoor_temp = weather['average_high_temperature_f']
+    if mode == 'heat':
+        sign = 1.0
+    else:
+        sign = -1.0
+    utcnow = datetime.utcnow()
+    local_datetime = utcnow.replace(tzinfo=pytz.utc).astimezone(pytz.timezone(weather['timezone']))
+    local_zero = local_datetime.replace(hour=0, minute=0, second=0, microsecond=0)
+    night_threshold = local_zero + timedelta(hours=NIGHT_HOUR[local_datetime.weekday()])
+    morning_threshold = local_zero + timedelta(hours=MORNING_HOUR[local_datetime.weekday()])
+    is_night = (local_datetime >= night_threshold) or (local_datetime <= morning_threshold)
+    if is_night:
+        shift = sign*custom.get('night_comfort',0)
+    else:
+        shift = sign*custom.get('day_comfort',0)
+    target = calc_neutral_temp_f(average_outdoor_temp) + shift
+    return target
+
+def get_desired_drybulb_temp(weather, thermostat, custom={}):
+    average_outdoor_temp = weather['average_high_temperature_f']
+    outdoor_temp_f = weather['temperature_f']
+    target_set = get_desired_set(weather, thermostat['hvac_mode'], custom)
+
+    utcnow = datetime.utcnow()
+    utcdate = utcnow.date()
+    sunrise = datetime.utcfromtimestamp(weather['sunrise']) + timedelta(hours=1)
+    sunset = datetime.utcfromtimestamp(weather['sunset']) - timedelta(hours=1)
+    is_dark = utcnow >= datetime.combine(utcdate, sunset.time()) or utcnow <= datetime.combine(utcdate, sunrise.time())
+    solar = 0 if is_dark else SOLAR_SCALE*(1.0-weather['cloud_cover_frac'])
+
+    alpha = 0.025 + WIND_ALPHA_SCALE*weather['wind_speed_mph']
+
+    clo = 0.5
+
+    actual_temperature_f = thermostat['ambient_temperature_f']
+    tr = (1-alpha)*actual_temperature_f + alpha*(outdoor_temp_f + solar)
+    actual_set = round(calculate_set(actual_temperature_f, tr, 0.1, thermostat['humidity'], 1.2, clo, 0),1)
+    ta = round(reverse_set(target_set, outdoor_temp_f+solar, alpha, 0.1, thermostat['humidity'], 1.2, clo, 0),1)
+
+    control = {
+        'timestamp': int(time.time()),
+        'clo': clo,
+        'is_dark': is_dark,
+        'solar': solar,
+        'alpha': alpha,
+        'actual_heat_index_f': actual_set,
+        'target_heat_index_f': round(target_set,1),
+        'actual_temperature_f': actual_temperature_f,
+        'target_temperature_f': ta
+    }
+    return ta, control
+
 
 def get_desired_heat_index(weather, mode, indoor_temperature, actual_heat_index, thermostat_id, custom):
     # print 'Calculate Target Heat Index'
@@ -286,9 +355,7 @@ db.child('thermostats').child(thermostat_id).child('latest_info').update(thermos
 custom = db.child('thermostats').child(thermostat_id).child('custom').get().val()
 if custom is None:
     custom = {}
-actual_heat_index = get_heat_index(thermostat['ambient_temperature_f'], thermostat['humidity'])
-target, control = get_desired_heat_index(weather, thermostat['hvac_mode'], thermostat['ambient_temperature_f'], actual_heat_index, thermostat_id, custom=custom)
-required = invert_heat_index(target, thermostat['humidity'])
+required, control = get_desired_drybulb_temp(weather, thermostat, custom=custom)
 force_temp_away = False
 if 'desired_away' in custom and custom['desired_away']=='away':
     force_temp_away = True

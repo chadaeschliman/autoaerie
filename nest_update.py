@@ -105,12 +105,12 @@ def get_humidity(temperature, dewpoint):
 
 def get_heat_index(temperature, humidity):
     dewpoint = get_dewpoint(temperature, humidity)
-    return temperature - 0.9971*np.exp(0.02086*temperature)*(1-np.exp(0.0445*(dewpoint-57.2)))
+    return round(temperature - 0.9971*np.exp(0.02086*temperature)*(1-np.exp(0.0445*(dewpoint-57.2))),1)
 
 def invert_heat_index(heat_index, humidity):
     res = minimize_scalar(lambda T: np.square(heat_index - get_heat_index(T, humidity)), tol=0.0001)
     if res.success:
-        return res.x
+        return round(res.x,1)
     else:
         return None
 
@@ -168,7 +168,7 @@ def update_weather(zipcode):
         history = db.child('weather').child(key).child('history').get().val()
         if history is None:
             history = []
-        oldest = utcnow - timedelta(days=14)
+        oldest = utcnow - timedelta(days=10)
         history = [latest_weather] + [w for w in history if datetime.utcfromtimestamp(w['timestamp'])>=oldest]
         db.child('weather').child(key).child('history').set(history)
     return key, latest_weather
@@ -382,6 +382,6 @@ else:
             match = False
             break
 if not match:
-    oldest = utcnow - timedelta(days=14)
+    oldest = utcnow - timedelta(days=10)
     history = [w for w in history if datetime.utcfromtimestamp(w['timestamp'])>=oldest] + [sub]
     db.child('thermostats').child(thermostat_id).child('history').set(history)

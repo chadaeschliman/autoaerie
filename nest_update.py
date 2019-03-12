@@ -114,31 +114,6 @@ def invert_heat_index(heat_index, humidity):
     else:
         return None
 
-def get_average_high(zipcode):
-    today = datetime.utcnow().replace(hour=0,minute=0,second=0,microsecond=0)
-    if os.path.exists(weather_pickle):
-        with open(weather_pickle,'rb') as f:
-            weather_data = pickle.load(f)
-    else:
-        weather_data = {}
-    if zipcode in weather_data and datetime.strptime(weather_data[zipcode]['date'],'%Y-%m-%d') >= today:
-        result = weather_data[zipcode]
-    else:
-        # print 'Pulling historical weather for', zipcode
-        lat,lng = zc.get_lat_long(zipcode)
-        weather = ds.get_historical(lat, lng, days=14)
-        result = {
-            'date': today.strftime('%Y-%m-%d')
-        }
-        for k,v in weather.iteritems():
-            if k=='date' or k=='timezone':
-                continue
-            result[k] = np.mean(v)
-        weather_data[zipcode] = result
-        with open(weather_pickle,'wb') as f:
-            pickle.dump(weather_data, f)
-    return result['temperatureMax']
-
 def get_weather_key(zipcode):
     lat,lng = zc.get_lat_long(zipcode)
     key = ('%+.2f_%+.2f'%(lat,lng)).replace('.',',')
@@ -180,7 +155,7 @@ def update_weather(zipcode):
 
 def get_desired_heat_index(weather, mode, indoor_temperature, actual_heat_index, thermostat_id, custom):
     # print 'Calculate Target Heat Index'
-    high_temp = get_average_high(zipcode)
+    high_temp = weather['average_high_temperature_f']
     # for k,v in weather.iteritems():
     #     print ' %s: %s'%(k, str(v))
 

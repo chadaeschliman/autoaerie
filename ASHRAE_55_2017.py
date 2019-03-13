@@ -318,5 +318,5 @@ def reverse_set(target, to, alpha, vel, rh, met, clo, wme):
     x0 = target
     if clo is None:
         clo = est_clo(to)
-    res = optimize.fmin(lambda x: (target-calculate_set(x, (1-alpha)*x+alpha*to, vel, rh, met, clo, wme))**2, x0=x0, xtol=0.01, full_output=False)
+    res = optimize.fmin(lambda x: (target-calculate_set(x, (1-alpha)*x+alpha*to, vel, rh, met, clo, wme))**2, x0=x0, xtol=0.01, full_output=False, disp=False)
     return res[0]

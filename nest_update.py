@@ -157,13 +157,13 @@ def update_weather(zipcode):
         oldest = int((utcnow - timedelta(days=10) - datetime.utcfromtimestamp(0)).total_seconds())
         for _ in xrange(1000):
             try:
-                old = db.child('weather').child(weather_key).child('history2').order_by_key().limit_to_first(2).get().val()
+                old = db.child('weather').child(key).child('history2').order_by_key().limit_to_first(2).get().val()
             except:
                 break
             done = False
             for k in old.keys():
                 if int(k) < oldest:
-                    db.child('weather').child(weather_key).child('history2').child(k).remove()
+                    db.child('weather').child(key).child('history2').child(k).remove()
                 else:
                     done = True
                     break

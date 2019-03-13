@@ -475,6 +475,8 @@ for _ in xrange(1000):
         old = db.child('thermostats').child(thermostat_id).child('history2').order_by_key().limit_to_first(2).get().val()
     except:
         break
+    if old is None:
+        break
     done = False
     for k in old.keys():
         if int(k) < oldest:

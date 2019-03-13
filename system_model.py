@@ -46,7 +46,7 @@ def eval(T0, reset_period, input_on, outside_temp, wind_mph, coef):
     return np.sqrt(np.mean(np.square(np.maximum(-10, np.minimum(10, err)))))
 
 def train_model(db, thermostat_id, weather_key, x0, mode):
-    thermostat_history = db.child('thermostats').child(thermostat_id).child('history').get().val()
+    thermostat_history = [v for v in db.child('thermostats').child(thermostat_id).child('history2').order_by_key().get().val().itervalues()]
     if len(thermostat_history) < 24*60//5:
         return None
     tdf = pd.DataFrame(thermostat_history)

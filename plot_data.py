@@ -22,7 +22,7 @@ except:
 
     thermostat_id = '271sIc5a9G9ZTY6dEDulAjWfgC833gx7'
 
-    thermostat_history = db.child('thermostats').child(thermostat_id).child('history').get().val()
+    thermostat_history = [v for v in db.child('thermostats').child(thermostat_id).child('history2').order_by_key().get().val().itervalues()]
     thermostat = db.child('thermostats').child(thermostat_id).child('latest_info').get().val()
     weather_key = thermostat['weather_key']
     weather_latest = db.child('weather').child(weather_key).child('latest').get().val()

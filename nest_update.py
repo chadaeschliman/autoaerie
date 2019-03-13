@@ -430,6 +430,7 @@ sub = {
     'target_heat_index_f': round(control['target_heat_index_f'],1),
     'actual_heat_index_f': round(control['actual_heat_index_f'],1),
 }
+
 history = db.child('thermostats').child(thermostat_id).child('history').get().val()
 match = False
 if history is None:
@@ -447,3 +448,40 @@ if not match:
     oldest = utcnow - timedelta(days=10)
     history = [w for w in history if datetime.utcfromtimestamp(w['timestamp'])>=oldest] + [sub]
     db.child('thermostats').child(thermostat_id).child('history').set(history)
+
+# add to history if changed
+order_by_key()
+try:
+    last_history = db.child('thermostats').child(thermostat_id).child('history2').order_by_key().limit_to_last(1).get().val().itervalues().next()
+except:
+    last_history is None
+match = False
+if last_history is None:
+    match = True
+else:
+    match = True
+    for k,v in last_history.iteritems():
+        if k=='timestamp':
+            continue
+        if v != sub[k]:
+            match = False
+            break
+if not match:
+    db.child('thermostats').child(thermostat_id).child('history2').child(sub['timestamp']).set(sub)
+
+# clean up old values
+oldest = int((utcnow - timedelta(days=10) - datetime.utcfromtimestamp(0)).total_seconds())
+for _ in xrange(1000):
+    try:
+        old = db.child('thermostats').child(thermostat_id).child('history2').order_by_key().limit_to_first(2).get().val()
+    except:
+        break
+    done = False
+    for k in old.keys():
+        if int(k) < oldest:
+            db.child('thermostats').child(thermostat_id).child('history2').child(k).remove()
+        else:
+            done = True
+            break
+    if done:
+        break

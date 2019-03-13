@@ -456,7 +456,7 @@ except:
     last_history = None
 match = False
 if last_history is None:
-    match = True
+    match = False
 else:
     match = True
     for k,v in last_history.iteritems():

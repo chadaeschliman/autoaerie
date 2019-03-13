@@ -149,12 +149,27 @@ def update_weather(zipcode):
             'average_high_temperature_f': average_temp,
         }
         db.child('weather').child(key).child('latest').set(latest_weather)
-        history = db.child('weather').child(key).child('history').get().val()
-        if history is None:
-            history = []
-        oldest = utcnow - timedelta(days=10)
-        history = [latest_weather] + [w for w in history if datetime.utcfromtimestamp(w['timestamp'])>=oldest]
-        db.child('weather').child(key).child('history').set(history)
+
+        # add to history
+        db.child('weather').child(key).child('history2').child(latest_weather['timestamp']).set(latest_weather)
+
+        # clean up old values
+        oldest = int((utcnow - timedelta(days=10) - datetime.utcfromtimestamp(0)).total_seconds())
+        for _ in xrange(1000):
+            try:
+                old = db.child('weather').child(weather_key).child('history2').order_by_key().limit_to_first(2).get().val()
+            except:
+                break
+            done = False
+            for k in old.keys():
+                if int(k) < oldest:
+                    db.child('weather').child(weather_key).child('history2').child(k).remove()
+                else:
+                    done = True
+                    break
+            if done:
+                break
+
     return key, latest_weather
 
 def calc_neutral_temp_f(outdoor_temp_f):

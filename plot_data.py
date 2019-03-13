@@ -11,28 +11,35 @@ try:
 except:
     ROOT = os.getcwd()
 
-with open(os.path.join(ROOT, 'firebase_config.json'),'rb') as f:
-    config = json.load(f)
-config["serviceAccount"] = os.path.join(ROOT,"autoaerie-firebase-adminsdk-nw230-36d33619c0.json")
-firebase = pyrebase.initialize_app(config)
-db = firebase.database()
+try:
+    print thermostat_id
+except:
+    with open(os.path.join(ROOT, 'firebase_config.json'),'rb') as f:
+        config = json.load(f)
+    config["serviceAccount"] = os.path.join(ROOT,"autoaerie-firebase-adminsdk-nw230-36d33619c0.json")
+    firebase = pyrebase.initialize_app(config)
+    db = firebase.database()
 
-thermostat_id = '271sIc5a9G9ZTY6dEDulAjWfgC833gx7'
+    thermostat_id = '271sIc5a9G9ZTY6dEDulAjWfgC833gx7'
 
-thermostat_history = db.child('thermostats').child(thermostat_id).child('history').get().val()
+    thermostat_history = db.child('thermostats').child(thermostat_id).child('history').get().val()
+    thermostat = db.child('thermostats').child(thermostat_id).child('latest_info').get().val()
+    weather_key = thermostat['weather_key']
+    weather_latest = db.child('weather').child(weather_key).child('latest').get().val()
+    weather_history = [v for v in db.child('weather').child(weather_key).child('history2').order_by_key().get().val().itervalues()]
+
 tdf = pd.DataFrame(thermostat_history)
-tdf['datetime'] = [datetime.utcfromtimestamp(x)-timedelta(hours=5) for x in tdf.timestamp]
+tdf['datetime'] = [datetime.utcfromtimestamp(x) for x in tdf.timestamp]
+tdf['local_datetime'] = tdf.datetime.dt.tz_localize('UTC').dt.tz_convert(weather_latest['timezone'])
 tdf['input_on'] = tdf['hvac_state']!='off'
 tdf['is_home'] = tdf['away']=='home'
-tdf = tdf.set_index('datetime')
+tdf = tdf.set_index('local_datetime')
 tdf_minute = tdf.resample('T').mean().interpolate('zero')
 
-thermostat = db.child('thermostats').child(thermostat_id).child('latest_info').get().val()
-weather_key = thermostat['weather_key']
-weather_history = db.child('weather').child(weather_key).child('history').get().val()
 wdf = pd.DataFrame(weather_history)
-wdf['datetime'] = [datetime.utcfromtimestamp(x)-timedelta(hours=5) for x in wdf.timestamp]
-wdf = wdf.set_index('datetime')
+wdf['datetime'] = [datetime.utcfromtimestamp(x) for x in wdf.timestamp]
+wdf['local_datetime'] = wdf.datetime.dt.tz_localize('UTC').dt.tz_convert(weather_latest['timezone'])
+wdf = wdf.set_index('local_datetime')
 wdf_minute = wdf.resample('T').mean().interpolate('zero')
 
 df_minute = pd.merge(tdf_minute, wdf_minute, how='left', left_index=True, right_index=True)
@@ -45,17 +52,12 @@ freq_str = '%dT'%(freq)
 df_hour = df_minute.resample(freq_str).mean()
 df_hour['actual_temperature_f_lag'] = df_hour.actual_temperature_f.shift(1)
 df_hour['temperature_f_lag'] = df_hour.temperature_f.shift(1)
-df_hour = df_hour.dropna()
+# df_hour = df_hour.dropna()
 df_hour['diff_temperature_f'] = df_hour['actual_temperature_f'] - df_hour['actual_temperature_f_lag']
 df_hour['delta_temperature_f'] = df_hour['actual_temperature_f_lag'] - df_hour['temperature_f_lag']
 df_hour['actual_temperature_f_lag^2'] = np.power(df_hour['actual_temperature_f_lag'],2)
 
-# df_minute['actual_temperature_f_lag_10'] = df_minute.actual_temperature_f.shift(10)
-# df_minute = df_minute.dropna()
-# df_minute['diff_temperature_f'] = df_minute['actual_temperature_f'] - df_minute['actual_temperature_f_lag_10']
-
-df_hour[['actual_temperature_f','target_temperature_f', 'temperature_f', 'input_on', 'is_home']].plot()
-# (55+5*df_hour.input_on).rolling(2,center=True).mean().plot(color='g',label='input_on (1hr MA)')
+df_hour[['actual_temperature_f','target_temperature_f', 'temperature_f', 'average_high_temperature_f', 'input_on']].plot()
 plt.grid(True)
 plt.legend()
 

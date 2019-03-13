@@ -57,7 +57,7 @@ def train_model(db, thermostat_id, weather_key, x0, mode):
     tdf = tdf.set_index('datetime')
     tdf_minute = tdf.resample('T').mean().interpolate('zero')
 
-    weather_history = db.child('weather').child(weather_key).child('history').get().val()
+    weather_history = [v for v in db.child('weather').child(weather_key).child('history2').order_by_key().get().val().itervalues()]
     wdf = pd.DataFrame(weather_history)
     wdf['datetime'] = [datetime.utcfromtimestamp(x) for x in wdf.timestamp]
     wdf = wdf.set_index('datetime')

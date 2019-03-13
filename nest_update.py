@@ -453,7 +453,7 @@ if not match:
 try:
     last_history = db.child('thermostats').child(thermostat_id).child('history2').order_by_key().limit_to_last(1).get().val().itervalues().next()
 except:
-    last_history is None
+    last_history = None
 match = False
 if last_history is None:
     match = True

@@ -450,7 +450,6 @@ if not match:
     db.child('thermostats').child(thermostat_id).child('history').set(history)
 
 # add to history if changed
-order_by_key()
 try:
     last_history = db.child('thermostats').child(thermostat_id).child('history2').order_by_key().limit_to_last(1).get().val().itervalues().next()
 except:

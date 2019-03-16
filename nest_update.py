@@ -51,15 +51,6 @@ MORNING_HOUR = {
     6: 6.5,
 }
 
-HEAT_DAY = 66.0
-HEAT_NIGHT = 62.0
-COOL_DAY = 78.0
-COOL_NIGHT = 74.0
-
-CLOUD_SCALE = 1.0
-WIND_SCALE = (1.0/20.0)
-MAX_COOL_DIFF = 10.0
-
 SOLAR_SCALE = 12.5
 WIND_ALPHA_SCALE = 0.05/20.0
 
@@ -236,58 +227,6 @@ def get_desired_drybulb_temp(weather, thermostat, custom={}):
     }
     return ta, control
 
-
-def get_desired_heat_index(weather, mode, indoor_temperature, actual_heat_index, thermostat_id, custom):
-    # print 'Calculate Target Heat Index'
-    high_temp = weather['average_high_temperature_f']
-    # for k,v in weather.iteritems():
-    #     print ' %s: %s'%(k, str(v))
-
-    utcnow = datetime.utcnow()
-    utcdate = utcnow.date()
-    sunrise = datetime.utcfromtimestamp(weather['sunrise'])
-    sunset = datetime.utcfromtimestamp(weather['sunset'])
-    is_dark = utcnow >= datetime.combine(utcdate, sunset.time()) or utcnow <= datetime.combine(utcdate, sunrise.time())
-
-    local_datetime = utcnow.replace(tzinfo=pytz.utc).astimezone(pytz.timezone(weather['timezone']))
-    local_zero = local_datetime.replace(hour=0, minute=0, second=0, microsecond=0)
-    night_threshold = local_zero + timedelta(hours=NIGHT_HOUR[local_datetime.weekday()])
-    morning_threshold = local_zero + timedelta(hours=MORNING_HOUR[local_datetime.weekday()])
-    is_night = (local_datetime >= night_threshold) or (local_datetime <= morning_threshold)
-    if mode == 'heat':
-        sign = 1.0
-        baseline = HEAT_NIGHT if is_night else HEAT_DAY
-        long_term_factor = max(-2.0,min(0, (high_temp-60.0)/30.0))
-    else:
-        sign = -1.0
-        baseline = COOL_NIGHT if is_night else COOL_DAY
-        long_term_factor = max(0,min(2, (high_temp-70.0)/10.0))
-
-    cloudy_offset = 0 if is_dark else CLOUD_SCALE*(weather['cloud_cover_frac']-0.5)/0.5
-    wind_offset = WIND_SCALE*sign*weather['wind_speed_mph']
-    desired = baseline + cloudy_offset + wind_offset + long_term_factor
-    # print ' '
-    # print ' baseline', baseline
-    # print ' clouds', cloudy_offset
-    # print ' wind', wind_offset
-    # print ' long_term', long_term_factor
-
-    outdoor_heatindex = get_heat_index(weather['temperature_f'],weather['humidity_frac'])
-    if mode != 'heat':
-        desired = max(desired, outdoor_heatindex-MAX_COOL_DIFF)
-
-    control = {
-        'timestamp': int(time.time()),
-        'baseline_f': baseline,
-        'cloudy_offset_f': cloudy_offset,
-        'wind_offset_f': wind_offset,
-        'long_term_offset_f': long_term_factor,
-        'outdoor_heat_index_f': outdoor_heatindex,
-        'actual_heat_index_f': actual_heat_index,
-        'target_heat_index_f': desired,
-    }
-
-    return desired, control
 
 # set target temperature (F)
 def set_temperature(thermostat_id, target_temperature):

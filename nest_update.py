@@ -32,23 +32,23 @@ na = NestAuth()
 zc = ZipCode()
 ds = DarkSky()
 
-NIGHT_HOUR = {
-    0: 21,
-    1: 21,
-    2: 21,
-    3: 21,
-    4: 21,
+DEFAULT_NIGHT_HOUR = {
+    0: 20.5,
+    1: 20.5,
+    2: 20.5,
+    3: 20.5,
+    4: 20.5,
     5: 21,
     6: 21,
 }
-MORNING_HOUR = {
-    0: 5.5,
-    1: 5.5,
-    2: 5.5,
-    3: 5.5,
-    4: 5.5,
-    5: 6.5,
-    6: 6.5,
+DEFAULT_MORNING_HOUR = {
+    0: 7,
+    1: 7,
+    2: 7,
+    3: 7,
+    4: 7,
+    5: 7.5,
+    6: 7.5,
 }
 
 SOLAR_SCALE = 12.5
@@ -174,35 +174,30 @@ def calc_neutral_temp_f(outdoor_temp_f):
     res = 1.8*(a0 + a1*(to_shift)*np.exp(-0.5*np.square(to_shift/tm)))+32
     return res
 
-def get_desired_set(weather, mode, custom={}):
-    average_outdoor_temp = weather['average_high_temperature_f']
-    if mode == 'heat':
-        sign = 1.0
-    else:
-        sign = -1.0
-    utcnow = datetime.utcnow()
-    local_datetime = utcnow.replace(tzinfo=pytz.utc).astimezone(pytz.timezone(weather['timezone']))
-    local_zero = local_datetime.replace(hour=0, minute=0, second=0, microsecond=0)
-    night_threshold = local_zero + timedelta(hours=NIGHT_HOUR[local_datetime.weekday()])
-    morning_threshold = local_zero + timedelta(hours=MORNING_HOUR[local_datetime.weekday()])
-    is_night = (local_datetime >= night_threshold) or (local_datetime <= morning_threshold)
-    if is_night:
-        shift = sign*custom.get('night_comfort',0)
-    else:
-        shift = sign*custom.get('day_comfort',0)
-    target = calc_neutral_temp_f(average_outdoor_temp) + shift
-    return target
-
 def get_desired_drybulb_temp(weather, thermostat, custom={}):
     average_outdoor_temp = weather['average_high_temperature_f']
     outdoor_temp_f = weather['temperature_f']
-    target_set = get_desired_set(weather, thermostat['hvac_mode'], custom)
-
+    if thermostat['hvac_mode'] == 'heat':
+        sign = 1.0
+    else:
+        sign = -1.0
+    night_hour = custom.get('night_hour',DEFAULT_NIGHT_HOUR)
+    morning_hour = custom.get('morning_hour',DEFAULT_MORNING_HOUR)
     utcnow = datetime.utcnow()
+    local_datetime = utcnow.replace(tzinfo=pytz.utc).astimezone(pytz.timezone(weather['timezone']))
+    local_zero = local_datetime.replace(hour=0, minute=0, second=0, microsecond=0)
+    night_threshold = local_zero + timedelta(hours=night_hour[local_datetime.weekday()])
+    morning_threshold = local_zero + timedelta(hours=morning_hour[local_datetime.weekday()])
+    is_night = (local_datetime >= night_threshold) or (local_datetime <= morning_threshold)
+    night_shift = sign*custom.get('night_comfort',0)
+    day_shift = sign*custom.get('day_comfort',0)
+    target_set = calc_neutral_temp_f(average_outdoor_temp)
+
     utcdate = utcnow.date()
     sunrise = datetime.utcfromtimestamp(weather['sunrise']) + timedelta(hours=1)
     sunset = datetime.utcfromtimestamp(weather['sunset']) - timedelta(hours=1)
-    is_dark = utcnow >= datetime.combine(utcdate, sunset.time()) or utcnow <= datetime.combine(utcdate, sunrise.time())
+    is_dark = utcnow >= datetime.combine(utcdate, sunset.time())\
+                or utcnow <= datetime.combine(utcdate, sunrise.time())
     solar = 0 if is_dark else SOLAR_SCALE*(1.0-weather['cloud_cover_frac'])
 
     alpha = 0.025 + WIND_ALPHA_SCALE*weather['wind_speed_mph']
@@ -212,7 +207,39 @@ def get_desired_drybulb_temp(weather, thermostat, custom={}):
     actual_temperature_f = thermostat['ambient_temperature_f']
     tr = (1-alpha)*actual_temperature_f + alpha*(outdoor_temp_f + solar)
     actual_set = round(calculate_set(actual_temperature_f, tr, 0.1, thermostat['humidity'], 1.2, clo, 0),1)
-    ta = round(reverse_set(target_set, outdoor_temp_f+solar, alpha, 0.1, thermostat['humidity'], 1.2, clo, 0),1)
+    ta_day = round(reverse_set(target_set+day_shift, outdoor_temp_f+solar, alpha, 0.1, thermostat['humidity'], 1.2, clo, 0),1)
+    ta_night = round(reverse_set(target_set+night_shift, outdoor_temp_f+solar, alpha, 0.1, thermostat['humidity'], 1.2, clo, 0),1)
+    ta_max = sign*max(sign*ta_day, sign*ta_night)
+
+    eta = None
+    if is_night:
+        ta = ta_night
+        if ta_night*sign < ta_day*sign:
+            if morning_threshold < utcnow:
+                eta = morning_threshold + timedelta(hours=24)
+            else:
+                eta = morning_threshold
+    else:
+        ta = ta_day
+        if ta_day*sign < ta_night*sign:
+            if night_threshold < utcnow:
+                eta = night_threshold + timedelta(hours=24)
+            else:
+                eta = night_threshold
+    if eta is not None:
+        model = get_model(db, thermostat_id, weather_key, thermostat['hvac_mode'])
+        minutes = min(12*60,(eta - utcnow).total_seconds()/60.0)
+        final_temp = eval_model_temperature_after_time(
+                        model,
+                        thermostat['ambient_temperature_f'],
+                        True,
+                        weather['temperature_f'],
+                        weather['wind_speed_mph'],
+                        minutes,
+                    )
+        if sign*final_temp < sign*ta_max:
+            ta = ta_max
+        print is_night, sign, ta_day, ta_night, ta_max, eta, final_temp, ta
 
     control = {
         'timestamp': int(time.time()),

@@ -234,13 +234,21 @@ def set_temperature(thermostat_id, target_temperature):
     thermo_url = BASE_URL + 'devices/thermostats/' + thermostat_id + '/'
     success = False
     try:
-        req = urllib2.Request(thermo_url, headers=headers, data=json.dumps({'target_temperature_f': target_temperature}))
+        req = urllib2.Request(
+            thermo_url,
+            headers=headers,
+            data=json.dumps({'target_temperature_f': target_temperature}),
+        )
         req.get_method = lambda: 'PUT'
         res = json.loads(urllib2.urlopen(req).read())
         success = res['target_temperature_f'] == target_temperature
     except urllib2.HTTPError as e:
         if e.code==307:
-            req = urllib2.Request(e.headers.dict['location'], headers=headers, data=json.dumps({'target_temperature_f': target_temperature}))
+            req = urllib2.Request(
+                e.headers.dict['location'],
+                headers=headers,
+                data=json.dumps({'target_temperature_f': target_temperature}),
+            )
             req.get_method = lambda: 'PUT'
             res = json.loads(urllib2.urlopen(req).read())
             success = res['target_temperature_f'] == target_temperature
@@ -322,7 +330,14 @@ if 'desired_away' in custom and custom['desired_away']=='away':
             else:
                 model = get_model(db, thermostat_id, weather_key, thermostat['hvac_mode'])
                 minutes = min(12*60,(eta - datetime.utcnow()).total_seconds()/60.0)
-                final_temp = eval_model_temperature_after_time(model, thermostat['ambient_temperature_f'], True, weather['temperature_f'], weather['wind_speed_mph'], minutes)
+                final_temp = eval_model_temperature_after_time(
+                                model,
+                                thermostat['ambient_temperature_f'],
+                                True,
+                                weather['temperature_f'],
+                                weather['wind_speed_mph'],
+                                minutes,
+                            )
                 control['away_minutes'] = minutes
                 control['away_final_temperature_f'] = final_temp
                 print "Predict %.1f degrees in %.1f minutes"%(final_temp, minutes)
@@ -372,7 +387,12 @@ sub = {
 
 # add to history if changed
 try:
-    last_history = db.child('thermostats').child(thermostat_id).child('history2').order_by_key().limit_to_last(1).get().val().itervalues().next()
+    last_history = db.child('thermostats')\
+                        .child(thermostat_id)\
+                        .child('history2')\
+                        .order_by_key()\
+                        .limit_to_last(1)\
+                        .get().val().itervalues().next()
 except:
     last_history = None
 match = False
@@ -387,13 +407,22 @@ else:
             match = False
             break
 if not match:
-    db.child('thermostats').child(thermostat_id).child('history2').child(sub['timestamp']).set(sub)
+    db.child('thermostats')\
+        .child(thermostat_id)\
+        .child('history2')\
+        .child(sub['timestamp'])\
+        .set(sub)
 
 # clean up old values
 oldest = int((utcnow - timedelta(days=10) - datetime.utcfromtimestamp(0)).total_seconds())
 for _ in xrange(1000):
     try:
-        old = db.child('thermostats').child(thermostat_id).child('history2').order_by_key().limit_to_first(2).get().val()
+        old = db.child('thermostats')\
+                .child(thermostat_id)\
+                .child('history2')\
+                .order_by_key()\
+                .limit_to_first(2)\
+                .get().val()
     except:
         break
     if old is None:

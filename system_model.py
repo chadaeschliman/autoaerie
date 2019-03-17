@@ -13,6 +13,8 @@ DEFAULT_INPUT = 0.2
 DEFAULT_DELTA = -2e-3
 DEFAULT_WIND = -4e-5
 CURRENT_MODEL_TYPE = 'input, deltaT, windxdeltaT'
+COEF0_WEIGHT = 5.0
+COEF1_WEIGHT = 50.0
 
 INPUT_LOOKUP = {
     'heat': 'heating',
@@ -42,8 +44,11 @@ def eval(T0, reset_period, input_on, outside_temp, wind_mph, coef):
         temp_outside_temp = outside_temp[offset:]
         temp_wind_mph = wind_mph[offset:]
         temp_T = advance_model(temp_T0, reset_period, temp_input_on, temp_outside_temp, temp_wind_mph, coef)
-        err.extend((temp_T0 - temp_T))
-    return np.sqrt(np.mean(np.square(np.maximum(-10, np.minimum(10, err)))))
+        delta = temp_T0 - temp_T
+        delta[delta>0] = np.maximum(0, delta[delta>0]-0.5)
+        delta[delta<0] = np.minimum(0, delta[delta<0]+0.5)
+        err.extend(delta)
+    return np.sqrt(np.mean(np.square(np.maximum(-10, np.minimum(10, err))))) - COEF0_WEIGHT*coef[0] + COEF1_WEIGHT*np.sum(np.abs(coef[1:]))
 
 def train_model(db, thermostat_id, weather_key, x0, mode):
     thermostat_history = [v for v in db.child('thermostats').child(thermostat_id).child('history2').order_by_key().get().val().itervalues()]

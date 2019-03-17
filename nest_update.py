@@ -42,12 +42,12 @@ DEFAULT_NIGHT_HOUR = {
     6: 21,
 }
 DEFAULT_MORNING_HOUR = {
-    0: 7,
+    0: 7.5,
     1: 7,
     2: 7,
     3: 7,
     4: 7,
-    5: 7.5,
+    5: 7,
     6: 7.5,
 }
 
@@ -210,10 +210,12 @@ def get_desired_drybulb_temp(weather, thermostat, custom={}):
     ta_day = round(reverse_set(target_set+day_shift, outdoor_temp_f+solar, alpha, 0.1, thermostat['humidity'], 1.2, clo, 0),1)
     ta_night = round(reverse_set(target_set+night_shift, outdoor_temp_f+solar, alpha, 0.1, thermostat['humidity'], 1.2, clo, 0),1)
     ta_max = sign*max(sign*ta_day, sign*ta_night)
+    target_set_max = target_set + sign*max(sign*day_shift, sign*night_shift)
 
     eta = None
     if is_night:
         ta = ta_night
+        target_set = target_set + night_shift
         if ta_night*sign < ta_day*sign:
             if morning_threshold < local_datetime:
                 eta = morning_threshold + timedelta(hours=24)
@@ -221,6 +223,7 @@ def get_desired_drybulb_temp(weather, thermostat, custom={}):
                 eta = morning_threshold
     else:
         ta = ta_day
+        target_set = target_set + day_shift
         if ta_day*sign < ta_night*sign:
             if night_threshold < local_datetime:
                 eta = night_threshold + timedelta(hours=24)
@@ -239,6 +242,7 @@ def get_desired_drybulb_temp(weather, thermostat, custom={}):
                     )
         if sign*final_temp < sign*ta_max:
             ta = ta_max
+            target_set = target_set_max
         print is_night, sign, ta_day, ta_night, ta_max, eta, final_temp, ta
 
     control = {

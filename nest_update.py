@@ -53,6 +53,7 @@ DEFAULT_MORNING_HOUR = {
 
 SOLAR_SCALE = 12.5
 WIND_ALPHA_SCALE = 0.05/20.0
+PREHEAT_TOL = 1.0
 
 BASE_URL = 'https://developer-api.nest.com/'
 
@@ -177,10 +178,7 @@ def calc_neutral_temp_f(outdoor_temp_f):
 def get_desired_drybulb_temp(weather, thermostat, custom={}):
     average_outdoor_temp = weather['average_high_temperature_f']
     outdoor_temp_f = weather['temperature_f']
-    if thermostat['hvac_mode'] == 'heat':
-        sign = 1.0
-    else:
-        sign = -1.0
+    sign = 1.0 if thermostat['hvac_mode'] == 'heat' else -1.0
     night_hour = custom.get('night_hour',DEFAULT_NIGHT_HOUR)
     morning_hour = custom.get('morning_hour',DEFAULT_MORNING_HOUR)
     utcnow = datetime.utcnow()
@@ -189,6 +187,7 @@ def get_desired_drybulb_temp(weather, thermostat, custom={}):
     night_threshold = local_zero + timedelta(hours=night_hour[local_datetime.weekday()])
     morning_threshold = local_zero + timedelta(hours=morning_hour[local_datetime.weekday()])
     is_night = (local_datetime >= night_threshold) or (local_datetime <= morning_threshold)
+    day_night = 'night' if is_night else 'day'
     night_shift = sign*custom.get('night_comfort',0)
     day_shift = sign*custom.get('day_comfort',0)
     target_set = calc_neutral_temp_f(average_outdoor_temp)
@@ -211,39 +210,46 @@ def get_desired_drybulb_temp(weather, thermostat, custom={}):
     ta_night = round(reverse_set(target_set+night_shift, outdoor_temp_f+solar, alpha, 0.1, thermostat['humidity'], 1.2, clo, 0),1)
     ta_max = sign*max(sign*ta_day, sign*ta_night)
     target_set_max = target_set + sign*max(sign*day_shift, sign*night_shift)
-
-    eta = None
-    if is_night:
-        ta = ta_night
-        target_set = target_set + night_shift
-        if ta_night*sign < ta_day*sign:
-            if morning_threshold < local_datetime:
-                eta = morning_threshold + timedelta(hours=24)
-            else:
-                eta = morning_threshold
+    if 'transition_preheating' in custom and custom['transition_preheating']==day_night:
+        ta = ta_max
+        target_set = target_set_max
     else:
-        ta = ta_day
-        target_set = target_set + day_shift
-        if ta_day*sign < ta_night*sign:
-            if night_threshold < local_datetime:
-                eta = night_threshold + timedelta(hours=24)
-            else:
-                eta = night_threshold
-    if eta is not None:
-        model = get_model(db, thermostat_id, weather_key, thermostat['hvac_mode'])
-        minutes = min(12*60,(eta - local_datetime).total_seconds()/60.0)
-        final_temp = eval_model_temperature_after_time(
-                        model,
-                        thermostat['ambient_temperature_f'],
-                        True,
-                        weather['temperature_f'],
-                        weather['wind_speed_mph'],
-                        minutes,
-                    )
-        if sign*final_temp < sign*ta_max:
-            ta = ta_max
-            target_set = target_set_max
-        print is_night, sign, ta_day, ta_night, ta_max, eta, final_temp, ta
+        if 'transition_preheating' in custom and custom['transition_preheating']!=day_night:
+            _ = custom.pop('transition_preheating')
+            db.child('thermostats').child(thermostat_id).child('custom').set(custom)
+        eta = None
+        if is_night:
+            ta = ta_night
+            target_set = target_set + night_shift
+            if ta_night*sign < ta_day*sign:
+                if morning_threshold < local_datetime:
+                    eta = morning_threshold + timedelta(hours=24)
+                else:
+                    eta = morning_threshold
+        else:
+            ta = ta_day
+            target_set = target_set + day_shift
+            if ta_day*sign < ta_night*sign:
+                if night_threshold < local_datetime:
+                    eta = night_threshold + timedelta(hours=24)
+                else:
+                    eta = night_threshold
+        if eta is not None:
+            model = get_model(db, thermostat_id, weather_key, thermostat['hvac_mode'])
+            minutes = min(12*60,(eta - local_datetime).total_seconds()/60.0)
+            final_temp = eval_model_temperature_after_time(
+                            model,
+                            thermostat['ambient_temperature_f'],
+                            True,
+                            weather['temperature_f'],
+                            weather['wind_speed_mph'],
+                            minutes,
+                        )
+            if sign*final_temp+PREHEAT_TOL < sign*ta_max:
+                ta = ta_max
+                target_set = target_set_max
+                custom['transition_preheating'] = day_night
+                db.child('thermostats').child(thermostat_id).child('custom').set(custom)
 
     control = {
         'timestamp': int(time.time()),
@@ -359,6 +365,7 @@ if 'desired_away' in custom and custom['desired_away']=='away':
             if 'preheating' in custom and custom['preheating']:
                 force_temp_away = False
             else:
+                sign = 1.0 if thermostat['hvac_mode'] == 'heat' else -1.0
                 model = get_model(db, thermostat_id, weather_key, thermostat['hvac_mode'])
                 minutes = min(12*60,(eta - datetime.utcnow()).total_seconds()/60.0)
                 final_temp = eval_model_temperature_after_time(
@@ -372,7 +379,7 @@ if 'desired_away' in custom and custom['desired_away']=='away':
                 control['away_minutes'] = minutes
                 control['away_final_temperature_f'] = final_temp
                 print "Predict %.1f degrees in %.1f minutes"%(final_temp, minutes)
-                if final_temp < required:
+                if sign*final_temp+PREHEAT_TOL < sign*required:
                     force_temp_away = False
                     custom['preheating'] = True
                     db.child('thermostats').child(thermostat_id).child('custom').set(custom)

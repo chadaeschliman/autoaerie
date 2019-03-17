@@ -215,20 +215,20 @@ def get_desired_drybulb_temp(weather, thermostat, custom={}):
     if is_night:
         ta = ta_night
         if ta_night*sign < ta_day*sign:
-            if morning_threshold < utcnow:
+            if morning_threshold < local_datetime:
                 eta = morning_threshold + timedelta(hours=24)
             else:
                 eta = morning_threshold
     else:
         ta = ta_day
         if ta_day*sign < ta_night*sign:
-            if night_threshold < utcnow:
+            if night_threshold < local_datetime:
                 eta = night_threshold + timedelta(hours=24)
             else:
                 eta = night_threshold
     if eta is not None:
         model = get_model(db, thermostat_id, weather_key, thermostat['hvac_mode'])
-        minutes = min(12*60,(eta - utcnow).total_seconds()/60.0)
+        minutes = min(12*60,(eta - local_datetime).total_seconds()/60.0)
         final_temp = eval_model_temperature_after_time(
                         model,
                         thermostat['ambient_temperature_f'],

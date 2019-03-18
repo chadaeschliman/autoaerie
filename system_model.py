@@ -13,8 +13,8 @@ DEFAULT_INPUT = 0.2
 DEFAULT_DELTA = -2e-3
 DEFAULT_WIND = -4e-5
 CURRENT_MODEL_TYPE = 'input, deltaT, windxdeltaT'
-COEF0_WEIGHT = 5.0
-COEF1_WEIGHT = 50.0
+COEF0_WEIGHT = 1.0
+COEF1_WEIGHT = 10.0
 
 INPUT_LOOKUP = {
     'heat': 'heating',

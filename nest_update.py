@@ -220,7 +220,6 @@ def get_desired_drybulb_temp(weather, thermostat, custom={}):
             day_shift = custom.get('day_cool',0)
             sign = -1.0
             pre_var = 'transition_precooling'
-        print mode, night_shift, target_set, target_set+night_shift,
 
         ta_day = round(reverse_set(target_set+day_shift, outdoor_temp_f+solar, alpha, 0.1, thermostat['humidity'], 1.2, clo, 0),1)
         ta_night = round(reverse_set(target_set+night_shift, outdoor_temp_f+solar, alpha, 0.1, thermostat['humidity'], 1.2, clo, 0),1)
@@ -250,7 +249,6 @@ def get_desired_drybulb_temp(weather, thermostat, custom={}):
                         eta = night_threshold + timedelta(hours=24)
                     else:
                         eta = night_threshold
-            print eta
             if eta is not None:
                 model = get_model(db, thermostat_id, weather_key, mode)
                 minutes = min(12*60,(eta - local_datetime).total_seconds()/60.0)
@@ -274,9 +272,11 @@ def get_desired_drybulb_temp(weather, thermostat, custom={}):
         'timestamp': int(time.time()),
         'clo': clo,
         'is_dark': is_dark,
+        'is_night': is_night,
         'solar': solar,
         'alpha': alpha,
         'actual_heat_index_f': actual_set,
+        'base_target_heat_index_f': round(base_target_set,1),
         'target_heat_index_low_f': round(min(all_target_set),1),
         'target_heat_index_high_f': round(max(all_target_set),1),
         'actual_temperature_f': actual_temperature_f,
@@ -490,6 +490,7 @@ sub = {
     'target_temperature_high_f': round(thermostat['target_temperature_high_f'],1),
     'actual_temperature_f': thermostat['ambient_temperature_f'],
     'humidity': thermostat['humidity'],
+    'base_target_heat_index_f': round(control['base_target_heat_index_f'],1),
     'target_heat_index_low_f': round(control['target_heat_index_low_f'],1),
     'target_heat_index_high_f': round(control['target_heat_index_high_f'],1),
     'actual_heat_index_f': round(control['actual_heat_index_f'],1),

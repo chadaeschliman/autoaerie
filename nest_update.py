@@ -55,6 +55,8 @@ SOLAR_SCALE = 12.5
 WIND_ALPHA_SCALE = 0.05/20.0
 PREHEAT_TOL = 1.0
 
+MIN_HEAT_COOL_GAP = 3
+
 BASE_URL = 'https://developer-api.nest.com/'
 
 headers = {
@@ -178,7 +180,6 @@ def calc_neutral_temp_f(outdoor_temp_f):
 def get_desired_drybulb_temp(weather, thermostat, custom={}):
     average_outdoor_temp = weather['average_high_temperature_f']
     outdoor_temp_f = weather['temperature_f']
-    sign = 1.0 if thermostat['hvac_mode'] == 'heat' else -1.0
     night_hour = custom.get('night_hour',DEFAULT_NIGHT_HOUR)
     morning_hour = custom.get('morning_hour',DEFAULT_MORNING_HOUR)
     utcnow = datetime.utcnow()
@@ -188,9 +189,7 @@ def get_desired_drybulb_temp(weather, thermostat, custom={}):
     morning_threshold = local_zero + timedelta(hours=morning_hour[local_datetime.weekday()])
     is_night = (local_datetime >= night_threshold) or (local_datetime <= morning_threshold)
     day_night = 'night' if is_night else 'day'
-    night_shift = sign*custom.get('night_comfort',0)
-    day_shift = sign*custom.get('day_comfort',0)
-    target_set = calc_neutral_temp_f(average_outdoor_temp)
+    base_target_set = calc_neutral_temp_f(average_outdoor_temp)
 
     utcdate = utcnow.date()
     sunrise = datetime.utcfromtimestamp(weather['sunrise']) + timedelta(hours=1)
@@ -206,50 +205,70 @@ def get_desired_drybulb_temp(weather, thermostat, custom={}):
     actual_temperature_f = thermostat['ambient_temperature_f']
     tr = (1-alpha)*actual_temperature_f + alpha*(outdoor_temp_f + solar)
     actual_set = round(calculate_set(actual_temperature_f, tr, 0.1, thermostat['humidity'], 1.2, clo, 0),1)
-    ta_day = round(reverse_set(target_set+day_shift, outdoor_temp_f+solar, alpha, 0.1, thermostat['humidity'], 1.2, clo, 0),1)
-    ta_night = round(reverse_set(target_set+night_shift, outdoor_temp_f+solar, alpha, 0.1, thermostat['humidity'], 1.2, clo, 0),1)
-    ta_max = sign*max(sign*ta_day, sign*ta_night)
-    target_set_max = target_set + sign*max(sign*day_shift, sign*night_shift)
-    if 'transition_preheating' in custom and custom['transition_preheating']==day_night:
-        ta = ta_max
-        target_set = target_set_max
-    else:
-        if 'transition_preheating' in custom and custom['transition_preheating']!=day_night:
-            _ = custom.pop('transition_preheating')
-            db.child('thermostats').child(thermostat_id).child('custom').set(custom)
-        eta = None
-        if is_night:
-            ta = ta_night
-            target_set = target_set + night_shift
-            if ta_night*sign < ta_day*sign:
-                if morning_threshold < local_datetime:
-                    eta = morning_threshold + timedelta(hours=24)
-                else:
-                    eta = morning_threshold
+
+    all_ta = []
+    all_target_set = []
+    for mode in thermostat['hvac_mode'].split('-'):
+        target_set = base_target_set
+        if mode=='heat':
+            night_shift = custom.get('night_heat',0)
+            day_shift = custom.get('day_heat',0)
+            sign = 1.0
+            pre_var = 'transition_preheating'
         else:
-            ta = ta_day
-            target_set = target_set + day_shift
-            if ta_day*sign < ta_night*sign:
-                if night_threshold < local_datetime:
-                    eta = night_threshold + timedelta(hours=24)
-                else:
-                    eta = night_threshold
-        if eta is not None:
-            model = get_model(db, thermostat_id, weather_key, thermostat['hvac_mode'])
-            minutes = min(12*60,(eta - local_datetime).total_seconds()/60.0)
-            final_temp = eval_model_temperature_after_time(
-                            model,
-                            thermostat['ambient_temperature_f'],
-                            True,
-                            weather['temperature_f'],
-                            weather['wind_speed_mph'],
-                            minutes,
-                        )
-            if sign*final_temp+PREHEAT_TOL < sign*ta_max:
-                ta = ta_max
-                target_set = target_set_max
-                custom['transition_preheating'] = day_night
+            night_shift = custom.get('night_cool',0)
+            day_shift = custom.get('day_cool',0)
+            sign = -1.0
+            pre_var = 'transition_precooling'
+        print mode, night_shift, target_set, target_set+night_shift,
+
+        ta_day = round(reverse_set(target_set+day_shift, outdoor_temp_f+solar, alpha, 0.1, thermostat['humidity'], 1.2, clo, 0),1)
+        ta_night = round(reverse_set(target_set+night_shift, outdoor_temp_f+solar, alpha, 0.1, thermostat['humidity'], 1.2, clo, 0),1)
+        ta_max = sign*max(sign*ta_day, sign*ta_night)
+        target_set_max = target_set + sign*max(sign*day_shift, sign*night_shift)
+        if pre_var in custom and custom[pre_var]==day_night:
+            ta = ta_max
+            target_set = target_set_max
+        else:
+            if pre_var in custom and custom[pre_var]!=day_night:
+                _ = custom.pop(pre_var)
                 db.child('thermostats').child(thermostat_id).child('custom').set(custom)
+            eta = None
+            if is_night:
+                ta = ta_night
+                target_set = target_set + night_shift
+                if ta_night*sign < ta_day*sign:
+                    if morning_threshold < local_datetime:
+                        eta = morning_threshold + timedelta(hours=24)
+                    else:
+                        eta = morning_threshold
+            else:
+                ta = ta_day
+                target_set = target_set + day_shift
+                if ta_day*sign < ta_night*sign:
+                    if night_threshold < local_datetime:
+                        eta = night_threshold + timedelta(hours=24)
+                    else:
+                        eta = night_threshold
+            print eta
+            if eta is not None:
+                model = get_model(db, thermostat_id, weather_key, mode)
+                minutes = min(12*60,(eta - local_datetime).total_seconds()/60.0)
+                final_temp = eval_model_temperature_after_time(
+                                model,
+                                thermostat['ambient_temperature_f'],
+                                True,
+                                weather['temperature_f'],
+                                weather['wind_speed_mph'],
+                                minutes,
+                            )
+                if sign*final_temp+PREHEAT_TOL < sign*ta_max:
+                    ta = ta_max
+                    target_set = target_set_max
+                    custom[pre_var] = day_night
+                    db.child('thermostats').child(thermostat_id).child('custom').set(custom)
+        all_ta.append(ta)
+        all_target_set.append(target_set)
 
     control = {
         'timestamp': int(time.time()),
@@ -258,11 +277,13 @@ def get_desired_drybulb_temp(weather, thermostat, custom={}):
         'solar': solar,
         'alpha': alpha,
         'actual_heat_index_f': actual_set,
-        'target_heat_index_f': round(target_set,1),
+        'target_heat_index_low_f': round(min(all_target_set),1),
+        'target_heat_index_high_f': round(max(all_target_set),1),
         'actual_temperature_f': actual_temperature_f,
-        'target_temperature_f': ta
+        'target_temperature_low_f': min(all_ta),
+        'target_temperature_high_f': max(all_ta),
     }
-    return ta, control
+    return all_ta, control
 
 
 # set target temperature (F)
@@ -289,6 +310,37 @@ def set_temperature(thermostat_id, target_temperature):
             req.get_method = lambda: 'PUT'
             res = json.loads(urllib2.urlopen(req).read())
             success = res['target_temperature_f'] == target_temperature
+    return success
+
+# set target temperature range (F)
+def set_temperature_range(thermostat_id, target_temperature_range):
+    # set thermostat (urllib2 throws an error for the redirect which needs to be followed)
+    thermo_url = BASE_URL + 'devices/thermostats/' + thermostat_id + '/'
+    success = False
+    data = json.dumps({
+        'target_temperature_low_f': min(target_temperature_range),
+        'target_temperature_high_f': max(min(target_temperature_range)+MIN_HEAT_COOL_GAP, max(target_temperature_range)),
+    })
+    print data
+    try:
+        req = urllib2.Request(
+            thermo_url,
+            headers=headers,
+            data=data,
+        )
+        req.get_method = lambda: 'PUT'
+        res = json.loads(urllib2.urlopen(req).read())
+        success = res['target_temperature_low_f'] == min(target_temperature_range) and res['target_temperature_high_f'] == max(target_temperature_range)
+    except urllib2.HTTPError as e:
+        if e.code==307:
+            req = urllib2.Request(
+                e.headers.dict['location'],
+                headers=headers,
+                data=data,
+            )
+            req.get_method = lambda: 'PUT'
+            res = json.loads(urllib2.urlopen(req).read())
+            success = res['target_temperature_low_f'] == min(target_temperature_range) and res['target_temperature_high_f'] == max(target_temperature_range)
     return success
 
 # set away state
@@ -355,56 +407,74 @@ custom = db.child('thermostats').child(thermostat_id).child('custom').get().val(
 if custom is None:
     custom = {}
 required, control = get_desired_drybulb_temp(weather, thermostat, custom=custom)
-force_temp_away = False
-if 'desired_away' in custom and custom['desired_away']=='away':
-    force_temp_away = True
-    control['control_target_temperature_f'] = required
-    if 'desired_eta' in custom and custom['desired_eta'] is not None:
-        eta = datetime.utcfromtimestamp(custom['desired_eta'])
-        if eta > datetime.utcnow():
-            if 'preheating' in custom and custom['preheating']:
-                force_temp_away = False
-            else:
-                sign = 1.0 if thermostat['hvac_mode'] == 'heat' else -1.0
-                model = get_model(db, thermostat_id, weather_key, thermostat['hvac_mode'])
-                minutes = min(12*60,(eta - datetime.utcnow()).total_seconds()/60.0)
-                final_temp = eval_model_temperature_after_time(
-                                model,
-                                thermostat['ambient_temperature_f'],
-                                True,
-                                weather['temperature_f'],
-                                weather['wind_speed_mph'],
-                                minutes,
-                            )
-                control['away_minutes'] = minutes
-                control['away_final_temperature_f'] = final_temp
-                print "Predict %.1f degrees in %.1f minutes"%(final_temp, minutes)
-                if sign*final_temp+PREHEAT_TOL < sign*required:
+if len(required) > 0:
+    force_temp_away = False
+    if 'desired_away' in custom and custom['desired_away']=='away':
+        force_temp_away = True
+        if 'desired_eta' in custom and custom['desired_eta'] is not None:
+            eta = datetime.utcfromtimestamp(custom['desired_eta'])
+            if eta > datetime.utcnow():
+                if 'preheating' in custom and custom['preheating']:
                     force_temp_away = False
-                    custom['preheating'] = True
-                    db.child('thermostats').child(thermostat_id).child('custom').set(custom)
-        else:
-            force_temp_away = False
-            custom['desired_away'] = 'home'
-            custom['preheating'] = False
-            custom['desired_eta'] = None
-            db.child('thermostats').child(thermostat_id).child('custom').set(custom)
+                else:
+                    for mode in thermostat['hvac_mode'].split('-'):
+                        if mode=='heat':
+                            target = min(required)
+                            sign = 1.0
+                        else:
+                            target = max(required)
+                            sign = -1.0
+                        model = get_model(db, thermostat_id, weather_key, mode)
+                        minutes = min(12*60,(eta - datetime.utcnow()).total_seconds()/60.0)
+                        final_temp = eval_model_temperature_after_time(
+                                        model,
+                                        thermostat['ambient_temperature_f'],
+                                        True,
+                                        weather['temperature_f'],
+                                        weather['wind_speed_mph'],
+                                        minutes,
+                                    )
+                        control['away_minutes'] = minutes
+                        control['away_final_temperature_f'] = final_temp
+                        print "%s: Predict %.1f degrees in %.1f minutes"%(mode, final_temp, minutes)
+                        if sign*final_temp+PREHEAT_TOL < sign*target:
+                            force_temp_away = False
+                            custom['preheating'] = True
+                            db.child('thermostats').child(thermostat_id).child('custom').set(custom)
+            else:
+                force_temp_away = False
+                custom['desired_away'] = 'home'
+                custom['preheating'] = False
+                custom['desired_eta'] = None
+                db.child('thermostats').child(thermostat_id).child('custom').set(custom)
 
-if force_temp_away:
-    if thermostat['hvac_mode'] == 'heat':
-        required = thermostat['away_temperature_low_f']
-    elif thermostat['hvac_mode'] == 'cool':
-        required = thermostat['away_temperature_high_f']
-required_int = int(round(required))
+    if force_temp_away:
+        required = []
+        if 'heat' in thermostat['hvac_mode']:
+            required.append(thermostat['away_temperature_low_f'])
+        elif 'cool' in thermostat['hvac_mode']:
+            required.append(thermostat['away_temperature_high_f'])
+
+required_int = [int(round(r)) for r in required]
+
 success = False
 if structure['away'] == 'home':
-    if required_int != thermostat['target_temperature_f']:
-        success = set_temperature(thermostat_id, required_int)
-        if success:
-            time.sleep(10)
-            thermostat = get_thermostat_info(thermostat_id, weather_key)
+    if len(required_int) == 1:
+        required_int = required_int[0]
+        if required_int != thermostat['target_temperature_f']:
+            success = set_temperature(thermostat_id, required_int)
+            if success:
+                time.sleep(5)
+                thermostat = get_thermostat_info(thermostat_id, weather_key)
+    elif len(required_int) == 2:
+        if min(required_int) != thermostat['target_temperature_low_f'] or max(required_int) != thermostat['target_temperature_high_f']:
+            success = set_temperature_range(thermostat_id, required_int)
+            if success:
+                time.sleep(5)
+                thermostat = get_thermostat_info(thermostat_id, weather_key)
 
-control['target_temperature_f'] = required
+control['target_temperature_low_f'] = min(required)
+control['target_temperature_high_f'] = max(required)
 control['actual_temperature_f'] = thermostat['ambient_temperature_f']
 control['away'] = structure['away']
 control['set_temperature'] = success
@@ -416,10 +486,12 @@ sub = {
     'away': structure['away'],
     'hvac_mode': thermostat['hvac_mode'],
     'hvac_state': thermostat['hvac_state'],
-    'target_temperature_f': thermostat['target_temperature_f'],
+    'target_temperature_low_f': round(thermostat['target_temperature_low_f'],1),
+    'target_temperature_high_f': round(thermostat['target_temperature_high_f'],1),
     'actual_temperature_f': thermostat['ambient_temperature_f'],
     'humidity': thermostat['humidity'],
-    'target_heat_index_f': round(control['target_heat_index_f'],1),
+    'target_heat_index_low_f': round(control['target_heat_index_low_f'],1),
+    'target_heat_index_high_f': round(control['target_heat_index_high_f'],1),
     'actual_heat_index_f': round(control['actual_heat_index_f'],1),
 }
 
@@ -438,10 +510,13 @@ if last_history is None:
     match = False
 else:
     match = True
-    for k,v in last_history.iteritems():
+    for k,v in sub.iteritems():
         if k=='timestamp':
             continue
-        if v != sub[k]:
+        if k not in last_history:
+            match = False
+            break
+        if v != last_history[k]:
             match = False
             break
 if not match:

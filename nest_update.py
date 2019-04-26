@@ -452,7 +452,7 @@ if len(required) > 0:
         required = []
         if 'heat' in thermostat['hvac_mode']:
             required.append(thermostat['away_temperature_low_f'])
-        elif 'cool' in thermostat['hvac_mode']:
+        if 'cool' in thermostat['hvac_mode']:
             required.append(thermostat['away_temperature_high_f'])
 
 required_int = [int(round(r)) for r in required]

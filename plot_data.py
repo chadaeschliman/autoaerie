@@ -12,7 +12,7 @@ except:
     ROOT = os.getcwd()
 
 try:
-    print thermostat_id
+    print(thermostat_id)
 except:
     with open(os.path.join(ROOT, 'firebase_config.json'),'rb') as f:
         config = json.load(f)
@@ -22,11 +22,12 @@ except:
 
     thermostat_id = '271sIc5a9G9ZTY6dEDulAjWfgC833gx7'
 
-    thermostat_history = [v for v in db.child('thermostats').child(thermostat_id).child('history2').order_by_key().get().val().itervalues()]
+    thermostat_history = [v for v in db.child('thermostats').child(thermostat_id).child('history2').get().val().values()]
     thermostat = db.child('thermostats').child(thermostat_id).child('latest_info').get().val()
     weather_key = thermostat['weather_key']
     weather_latest = db.child('weather').child(weather_key).child('latest').get().val()
-    weather_history = [v for v in db.child('weather').child(weather_key).child('history2').order_by_key().get().val().itervalues()]
+    weather_history = [v for v in db.child('weather').child(weather_key).child('history2').get().val().values()]
+    # weather_history = [v for v in db.child('weather').child(weather_key).child('history2').order_by_key().get().val().values()]
 
 tdf = pd.DataFrame(thermostat_history)
 tdf['datetime'] = [datetime.utcfromtimestamp(x) for x in tdf.timestamp]
@@ -57,7 +58,7 @@ df_hour['diff_temperature_f'] = df_hour['actual_temperature_f'] - df_hour['actua
 df_hour['delta_temperature_f'] = df_hour['actual_temperature_f_lag'] - df_hour['temperature_f_lag']
 df_hour['actual_temperature_f_lag^2'] = np.power(df_hour['actual_temperature_f_lag'],2)
 
-df_hour[['actual_temperature_f','target_temperature_f', 'temperature_f', 'average_high_temperature_f', 'input_on']].plot()
+df_hour[['actual_temperature_f','target_temperature_high_f', 'target_temperature_low_f', 'temperature_f', 'average_high_temperature_f', 'input_on']].plot()
 plt.grid(True)
 plt.legend()
 

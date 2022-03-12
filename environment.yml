@@ -1,0 +1,14 @@
+name: aa
+dependencies:
+  - pandas
+  - pip
+  - requests
+  - numpy
+  - pyarrow
+  - scipy
+  - ipython
+  - matplotlib
+  - scikit-learn
+  - pip:
+    - pyrebase4
+    - pycryptodome>=3.7.3
